@@ -32,8 +32,8 @@
 
 // Convenient macros for printing out messages to the kernel log buffer
 #define axidma_err(fmt, ...) \
-    printk(KERN_ERR MODULE_NAME ": %s: %d: " fmt, __FILENAME__, __LINE__, \
-           ## __VA_ARGS__)
+    printk(KERN_ERR MODULE_NAME ": %s: %s: %d: " fmt, __FILENAME__, __func__, \
+           __LINE__, ## __VA_ARGS__)
 #define axidma_info(fmt, ...) \
     printk(KERN_ERR MODULE_NAME ": %s: %d: " fmt, __FILENAME__, __LINE__, \
            ## __VA_ARGS__)
