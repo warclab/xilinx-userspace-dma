@@ -18,7 +18,10 @@
 #include <linux/cdev.h>             // Definitions for character device structs
 
 #include <linux/dmaengine.h>        // Definitions for DMA structures and types
-#include <linux/amba/xilinx_dma.h>
+#include <linux/amba/xilinx_dma.h>  // Xilinx DMA device ID's
+
+// Local dependencies
+#include "axidma_ioctl.h"           // IOCTL argument structures
 
 /*----------------------------------------------------------------------------
  * Module Definitions
@@ -90,5 +93,7 @@ void axidma_chrdev_exit(struct axidma_device *dev);
 // Function prototypes
 int axidma_dma_init(struct axidma_device *dev);
 void axidma_dma_exit(struct axidma_device *dev);
+int axidma_rw_transfer(struct axidma_device *dev,
+                       struct axidma_transaction *trans);
 
 #endif /* AXIDMA_H_ */

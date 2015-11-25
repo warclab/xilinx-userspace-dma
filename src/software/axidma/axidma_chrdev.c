@@ -13,11 +13,15 @@
 // Kernel dependencies
 #include <linux/device.h>       // Device and class creation functions
 #include <linux/cdev.h>         // Character device functions
+#include <linux/ioctl.h>        // IOCTL macros and definitions
 #include <linux/fs.h>           // File operations and file types
 #include <linux/mm.h>           // Memory types and remapping functions
+#include <asm/uaccess.h>        // Userspace memory access functions
+#include <linux/errno.h>            // Linux error codes
 
 // Local dependencies
 #include "axidma.h"             // Local definitions
+#include "axidma_ioctl.h"       // IOCTL interface for the device
 
 // TODO: Maybe this can be improved?
 static struct axidma_device *axidma_dev;
@@ -31,7 +35,7 @@ static int axidma_open(struct inode *inode, struct file *file)
     // Only the root user can open this device, and it must be exclusive
     if (!capable(CAP_SYS_ADMIN)) {
         axidma_err("Only root can open this device.");
-        return -EPERM;
+        return -EACCES;
     } else if (!(file->f_flags & O_EXCL)) {
         axidma_err("O_EXCL must be specified for open()\n");
         return -EINVAL;
@@ -50,9 +54,13 @@ static int axidma_release(struct inode *inode, struct file *file)
 
 static int axidma_mmap(struct file *file, struct vm_area_struct *vma)
 {
+    struct axidma_device *dev;
     unsigned long alloc_size;
     void *addr;
     int rc;
+
+    // Get the axidma device structure
+    dev = file->private_data;
 
     // Determine the allocation size, and set the region as uncached
     alloc_size = vma->vm_end - vma->vm_start;
@@ -61,18 +69,73 @@ static int axidma_mmap(struct file *file, struct vm_area_struct *vma)
     // Allocate the requested region
     // TODO:
     //axidma_malloc();
-    addr = axidma_dev->dma_base_vaddr;
+    addr = dev->dma_base_vaddr;
 
     // Map the region into userspace
     rc = remap_pfn_range(vma, vma->vm_start, __phys_to_pfn(virt_to_phys(addr)),
                          alloc_size, vma->vm_page_prot);
     if (rc < 0) {
-        axidma_err("Unable to allocate address 0x%08lx, size %lu",
+        axidma_err("Unable to allocate address 0x%08lx, size %lu.\n",
                    vma->vm_start, alloc_size);
         return rc;
     }
 
     return 0;
+}
+
+static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+{
+    struct axidma_device *dev;
+    struct axidma_transaction trans_info;
+    const void *__user arg_ptr;
+    long rc;
+
+    // Coerce the arguement as a userspace pointer
+    arg_ptr = (const void __user *)arg;
+
+    // Verify that this IOCTL is intended for our device, and is in range
+    if (_IOC_TYPE(cmd) != AXIDMA_IOCTL_MAGIC) {
+        axidma_err("IOCTL command magic number does not match.\n");
+        return -ENOTTY;
+    } else if (_IOC_NR(cmd) > AXIDMA_NUM_IOCTLS) {
+        axidma_err("IOCTL command is out of range for this device.\n");
+        return -ENOTTY;
+    }
+
+    /* Verify that the input argument can be accessed, and has the correct size
+     * Note taht VERIFY_WRITE implies VERIFY_READ, so _IOC_RW is handled. */
+    if ((_IOC_DIR(cmd) & _IOC_READ)) {
+        if (!access_ok(VERIFY_WRITE, arg_ptr, _IOC_SIZE(cmd))) {
+            axidma_err("Specified argument cannot be written to.\n");
+            return -EFAULT;
+        }
+    } else if (_IOC_DIR(cmd) & _IOC_WRITE) {
+        if (!access_ok(VERIFY_READ, arg_ptr, _IOC_SIZE(cmd))) {
+            axidma_err("Specified argument cannot be read from.\n");
+            return -EFAULT;
+        }
+    }
+
+    // Get the axidma device from the file
+    dev = file->private_data;
+
+    // Perform the specified command
+    switch (cmd) {
+        case AXIDMA_DMA_READWRITE:
+            if (copy_from_user(&trans_info, arg_ptr, sizeof(trans_info)) != 0) {
+                axidma_err("Unable to copy transfer info from userspace for "
+                           "AXIDMA_DMA_READWRITE\n");
+                return -EFAULT;
+            }
+            rc = axidma_rw_transfer(dev, &trans_info);
+            break;
+
+        // Invalid command (already handled in preamble)
+        default:
+            return -ENOTTY;
+    }
+
+    return rc;
 }
 
 // The file operations for the AXI DMA device
@@ -81,6 +144,7 @@ static const struct file_operations axidma_fops = {
     .open = axidma_open,
     .release = axidma_release,
     .mmap = axidma_mmap,
+    .unlocked_ioctl = axidma_ioctl,
 };
 
 /*----------------------------------------------------------------------------
