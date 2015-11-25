@@ -51,10 +51,6 @@ struct axidma_device {
     struct class *dev_class;        // The device class for the character device
     struct cdev chrdev;             // The character device structure
 
-    unsigned long mem_size;         // The size of physical memory on the system
-    unsigned long cma_len;          // The length of the memory region for DMA
-    void *dma_base_vaddr;           // The kernel virtual address of the region
-    void *dma_base_paddr;           // The physical address of the dma region
     struct dma_chan *tx_chan;       // The transmit channel for DMA
     struct dma_chan *rx_chan;       // The receive channel for DMA
 };

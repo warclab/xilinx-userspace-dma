@@ -23,17 +23,6 @@ static struct axidma_device axidma_dev;
  * Module Parameters
  *----------------------------------------------------------------------------*/
 
-/* The amount of memory available on the board, by default we assume 512 MB for
- * the Zedboard. This controls where the module expects reserved memory. */
-static unsigned long max_phys_mem = MEMORY_SIZE;
-module_param(max_phys_mem, ulong, S_IRUGO);
-
-/* The size of the contiguous region the module will reserve for DMA. By
- * default, this is 100 MB. This must match up with the `mem=...` kernel
- * command line parameter specified. */
-static unsigned long cma_region_size = CMA_REGION_SIZE;
-module_param(cma_region_size, ulong, S_IRUGO);
-
 // The name to use for the character device. This is "axidma" by default.
 static char *chrdev_name = CHRDEV_NAME;
 module_param(chrdev_name, charp, S_IRUGO);
@@ -50,10 +39,7 @@ static int __init axidma_init(void)
 {
     int rc;
 
-    // Assign the physical memory size, and the length of the CMA region
-    axidma_dev.cma_len = cma_region_size;
-    axidma_dev.mem_size = max_phys_mem;
-
+    // Initialize the DMA interface
     rc = axidma_dma_init(&axidma_dev);
     if (rc < 0) {
         return rc;

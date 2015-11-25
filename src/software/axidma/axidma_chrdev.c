@@ -17,14 +17,58 @@
 #include <linux/fs.h>           // File operations and file types
 #include <linux/mm.h>           // Memory types and remapping functions
 #include <asm/uaccess.h>        // Userspace memory access functions
-#include <linux/errno.h>            // Linux error codes
+#include <linux/slab.h>         // Kernel allocation functions
+#include <linux/errno.h>        // Linux error codes
 
 // Local dependencies
 #include "axidma.h"             // Local definitions
 #include "axidma_ioctl.h"       // IOCTL interface for the device
 
+/*----------------------------------------------------------------------------
+ * Internal Definitions
+ *----------------------------------------------------------------------------*/
+
 // TODO: Maybe this can be improved?
 static struct axidma_device *axidma_dev;
+
+// A struct to store information about each DMA region allocated
+// TODO: Is a reference count required for this?
+struct axidma_vma_data {
+    struct axidma_device *dev;      // The AXI DMA device used
+    void *dma_vaddr;                // The kernel virtual address of the region
+    dma_addr_t dma_addr;            // The DMA address of the region
+};
+
+/*----------------------------------------------------------------------------
+ * VMA Operations
+ *----------------------------------------------------------------------------*/
+
+void axidma_vma_close(struct vm_area_struct *vma)
+{
+    struct axidma_vma_data *vma_data;
+    struct axidma_device *dev;
+    void *dma_vaddr;
+    dma_addr_t dma_addr;
+    unsigned long alloc_size;
+
+    // Get the AXI DMA device and the DMA information from the private data
+    vma_data = vma->vm_private_data;
+    dev = vma_data->dev;
+    dma_vaddr = vma_data->dma_vaddr;
+    dma_addr = vma_data->dma_addr;
+    alloc_size = vma->vm_end - vma->vm_start;
+
+    // Free the DMA region and the VMA data struct
+    dma_free_coherent(dev->device, alloc_size, dma_vaddr, dma_addr);
+    kfree(vma_data);
+
+    return;
+}
+
+// The VMA operations for the AXI DMA device
+static const struct vm_operations_struct axidma_vm_ops = {
+    .close = axidma_vma_close,
+};
 
 /*----------------------------------------------------------------------------
  * File Operations
@@ -55,32 +99,63 @@ static int axidma_release(struct inode *inode, struct file *file)
 static int axidma_mmap(struct file *file, struct vm_area_struct *vma)
 {
     struct axidma_device *dev;
-    unsigned long alloc_size;
-    void *addr;
+    struct axidma_vma_data *vma_data;
+    dma_addr_t dma_addr;
+    void *dma_vaddr;
+    unsigned long alloc_size, dma_pfn;
     int rc;
 
     // Get the axidma device structure
     dev = file->private_data;
 
-    // Determine the allocation size, and set the region as uncached
+    // Allocate a structure to store data about the DMA mapping
+    vma_data = kmalloc(sizeof(*vma_data), GFP_KERNEL);
+    if (vma_data == NULL) {
+        axidma_err("Unable to allocate VMA data structure.");
+        rc = -ENOMEM;
+        goto ret;
+    }
+
+    // Allocate the requested region a contiguous and uncached for DMA
     alloc_size = vma->vm_end - vma->vm_start;
     vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+    dma_vaddr = dma_alloc_coherent(NULL, alloc_size, &dma_addr,
+                                   GFP_KERNEL);
+    if (dma_vaddr == NULL) {
+        axidma_err("Unable to allocate contiguous DMA memory region of size "
+                   "%lu.\n", alloc_size);
+        axidma_err("Please make sure that the kernel was built with CMA "
+                   "support (CONFIG_CMA and related configs).\n");
+        rc = -ENOMEM;
+        goto free_vma_data;
+    }
 
-    // Allocate the requested region
-    // TODO:
-    //axidma_malloc();
-    addr = dev->dma_base_vaddr;
+    /* Override the VMA close with our call, so that we can free the DMA region
+     * when the memory region is closed. Pass in the data to do so. */
+    vma_data->dma_vaddr = dma_vaddr;
+    vma_data->dma_addr = dma_addr;
+    vma_data->dev = dev;
+    vma->vm_ops = &axidma_vm_ops;
+    vma->vm_private_data = vma_data;
 
     // Map the region into userspace
-    rc = remap_pfn_range(vma, vma->vm_start, __phys_to_pfn(virt_to_phys(addr)),
-                         alloc_size, vma->vm_page_prot);
+    dma_pfn = __phys_to_pfn(virt_to_phys(dma_vaddr));
+    rc = remap_pfn_range(vma, vma->vm_start, dma_pfn, alloc_size,
+                         vma->vm_page_prot);
     if (rc < 0) {
-        axidma_err("Unable to allocate address 0x%08lx, size %lu.\n",
-                   vma->vm_start, alloc_size);
-        return rc;
+        axidma_err("Unable to remap address %p to userspace address 0x%08lx, "
+                   "size %lu.\n", dma_vaddr, vma->vm_start, alloc_size);
+        goto free_dma_region;
     }
 
     return 0;
+
+free_dma_region:
+    dma_free_coherent(dev->device, alloc_size, dma_vaddr, dma_addr);
+free_vma_data:
+    kfree(vma_data);
+ret:
+    return rc;
 }
 
 static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)

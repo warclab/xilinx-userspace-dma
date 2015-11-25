@@ -31,8 +31,7 @@
 // A convenient structure to pass between prep and start transfer functions
 struct axidma_transfer {
     void *buf;                          // The buffer to use for transfer
-    size_t buf_len;                        // The length of the transfer
-
+    size_t buf_len;                     // The length of the transfer
     dma_addr_t dma_addr;                // The DMA address of the buffer
     dma_cookie_t cookie;                // The DMA cookie for the transfer
     enum dma_transfer_direction dir;    // The direction of the transfer
@@ -239,24 +238,10 @@ static bool axidma_dmadev_filter(struct dma_chan *chan, void *match)
 
 int axidma_dma_init(struct axidma_device *dev)
 {
-    unsigned long cma_base;
     dma_cap_mask_t dma_mask;
     int tx_chan_match, rx_chan_match;
     int device_id;
     int rc;
-
-    // Calculate the base of the CMA region
-    cma_base = dev->mem_size - dev->cma_len;
-    dev->dma_base_paddr = (void *)(dev->mem_size - dev->cma_len);
-
-    // Remap the contigous DMA region into the kernel address space
-    dev->dma_base_vaddr = ioremap_nocache(cma_base, dev->cma_len);
-    if (dev->dma_base_vaddr == NULL) {
-        axidma_err("Unable to allocate contiguous memory region at %p of size "
-                   "%lu.\n", dev->dma_base_paddr, dev->cma_len);
-        rc = -ENOMEM;
-        goto ret;
-    }
 
     // Setup the desired DMA capabilities
     dma_cap_zero(dma_mask);
@@ -274,7 +259,7 @@ int axidma_dma_init(struct axidma_device *dev)
     if (dev->tx_chan == NULL) {
         axidma_err("Could not find a transmit channel.\n");
         rc = -ENODEV;
-        goto unmap_io;
+        goto ret;
     }
     dev->rx_chan = dma_request_channel(dma_mask, axidma_dmadev_filter,
                                        (void *)rx_chan_match);
@@ -285,15 +270,11 @@ int axidma_dma_init(struct axidma_device *dev)
     }
 
     // Inform the user of the DMA information
-    axidma_info("Allocated contigous memory region at 0x%08lx of size %lu.\n",
-                (unsigned long)dev->dma_base_paddr, dev->cma_len);
     axidma_info("Found %d receive channels and %d transmit channels.\n", 1, 1);
     return 0;
 
 cleanup_tx:
     dma_release_channel(dev->tx_chan);
-unmap_io:
-    iounmap(dev->dma_base_vaddr);
 ret:
     return rc;
 }
@@ -303,7 +284,6 @@ void axidma_dma_exit(struct axidma_device *dev)
     // TODO: Check if any dma transactions are running
 
     // Cleanup all DMA related structures
-    iounmap(dev->dma_base_vaddr);
     dma_release_channel(dev->tx_chan);
     dma_release_channel(dev->rx_chan);
 }
