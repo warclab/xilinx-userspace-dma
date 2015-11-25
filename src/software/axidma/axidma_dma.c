@@ -48,7 +48,8 @@ static void axidma_dma_completion(void *completion)
     complete(completion);
 }
 
-static int axidma_prep_transfer(struct dma_chan *chan, struct axidma_transfer *dma_tfr)
+static int axidma_prep_transfer(struct dma_chan *chan,
+                                struct axidma_transfer *dma_tfr)
 {
     void *buf;
     size_t buf_len;
@@ -71,12 +72,11 @@ static int axidma_prep_transfer(struct dma_chan *chan, struct axidma_transfer *d
     dma_dev = chan->device;
     direction = (dma_dir == DMA_MEM_TO_DEV) ? "transfer" : "receive";
 
-    // Map the buffer, and get the dma address
-    dma_addr = dma_map_single(dma_dev->dev, buf, buf_len, dma_dir);
-    if (dma_mapping_error(dma_dev->dev, dma_addr)) {
-        axidma_err("Unable to map the %s buffer.\n", direction);
-        // FIXME: Is this the correct return code?
-        rc = -ENOMEM;
+    // Get the DMA address from the user virtual address
+    dma_addr = axidma_uservirt_to_dma(buf);
+    if (dma_addr == (dma_addr_t)NULL) {
+        axidma_err("Unable to get DMA address for buffer at %p.\n", buf);
+        rc = -EFAULT;
         goto ret;
     }
 
@@ -87,7 +87,7 @@ static int axidma_prep_transfer(struct dma_chan *chan, struct axidma_transfer *d
                                  (unsigned long)&dma_config);
     if (rc < 0) {
         axidma_err("Device control for the %s channel failed.\n", direction);
-        goto unmap_dma;
+        goto ret;
     }
 
     /* Configure the engine to send an interrupt acknowledgement upon
@@ -100,7 +100,7 @@ static int axidma_prep_transfer(struct dma_chan *chan, struct axidma_transfer *d
                    direction);
         // FIXME: Is this the correct return code?
         rc = -EBUSY;
-        goto unmap_dma;
+        goto ret;
     }
 
     /* Initalize the completion for this channel, and setup the callback to
@@ -114,7 +114,7 @@ static int axidma_prep_transfer(struct dma_chan *chan, struct axidma_transfer *d
                    direction);
         // FIXME: Is this the correct return code?
         rc = -EBUSY;
-        goto unmap_dma;
+        goto ret;
     }
 
     // Return the DMA cookie and address for the transaction
@@ -122,8 +122,6 @@ static int axidma_prep_transfer(struct dma_chan *chan, struct axidma_transfer *d
     dma_tfr->cookie = dma_cookie;
     return 0;
 
-unmap_dma:
-    dma_unmap_single(dma_dev->dev, dma_addr, buf_len, dma_dir);
 ret:
     return rc;
 }

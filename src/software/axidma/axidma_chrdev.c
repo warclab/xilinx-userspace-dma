@@ -11,6 +11,7 @@
  **/
 
 // Kernel dependencies
+#include <linux/sched.h>        // `Current` global variable for current task
 #include <linux/device.h>       // Device and class creation functions
 #include <linux/cdev.h>         // Character device functions
 #include <linux/ioctl.h>        // IOCTL macros and definitions
@@ -43,7 +44,37 @@ struct axidma_vma_data {
  * VMA Operations
  *----------------------------------------------------------------------------*/
 
-void axidma_vma_close(struct vm_area_struct *vma)
+/* Converts the given user space virtual address to a DMA address. If the
+ * conversion is unsuccessful, then (dma_addr_t)NULL is returned. */
+dma_addr_t axidma_uservirt_to_dma(void *user_addr)
+{
+    struct vm_area_struct *vma;
+    struct axidma_vma_data *vma_data;
+    dma_addr_t dma_base_addr;
+    unsigned long offset;
+
+    // Find the VMA structure for the user address
+    vma = find_vma(current->mm, (unsigned long)user_addr);
+    if (vma == NULL) {
+        axidma_err("Unable to find VMA struct for user virtual address %p.\n",
+                   user_addr);
+        return (dma_addr_t)NULL;
+    }
+
+    // Get the DMA base address from the VMA structure's data
+    vma_data = vma->vm_private_data;
+    if (vma_data == NULL) {
+        axidma_err("VMA data for user address is not properly initialized.\n");
+        return (dma_addr_t)NULL;
+    }
+    dma_base_addr = vma_data->dma_addr;
+
+    // Compute the offset into the VMA region, and add this to the DMA address
+    offset = (unsigned long)user_addr - vma->vm_start;
+    return dma_base_addr + (dma_addr_t)offset;
+}
+
+static void axidma_vma_close(struct vm_area_struct *vma)
 {
     struct axidma_vma_data *vma_data;
     struct axidma_device *dev;
