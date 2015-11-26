@@ -87,7 +87,7 @@ static int axidma_prep_transfer(struct dma_chan *chan,
                                  (unsigned long)&dma_config);
     if (rc < 0) {
         axidma_err("Device control for the %s channel failed.\n", direction);
-        goto ret;
+        goto stop_dma;
     }
 
     /* Configure the engine to send an interrupt acknowledgement upon
@@ -98,9 +98,8 @@ static int axidma_prep_transfer(struct dma_chan *chan,
     if (dma_txnd == NULL) {
         axidma_err("Unable to prepare the dma engine for the %s buffer.\n",
                    direction);
-        // FIXME: Is this the correct return code?
         rc = -EBUSY;
-        goto ret;
+        goto stop_dma;
     }
 
     /* Initalize the completion for this channel, and setup the callback to
@@ -112,9 +111,8 @@ static int axidma_prep_transfer(struct dma_chan *chan,
     if (dma_submit_error(dma_cookie)) {
         axidma_err("Unable to submit the %s dma transaction to the engine.\n",
                    direction);
-        // FIXME: Is this the correct return code?
         rc = -EBUSY;
-        goto ret;
+        goto stop_dma;
     }
 
     // Return the DMA cookie and address for the transaction
@@ -122,6 +120,8 @@ static int axidma_prep_transfer(struct dma_chan *chan,
     dma_tfr->cookie = dma_cookie;
     return 0;
 
+stop_dma:
+    dma_dev->device_control(chan, DMA_TERMINATE_ALL, (unsigned long)NULL);
 ret:
     return rc;
 }
@@ -134,6 +134,7 @@ static int axidma_start_transfer(struct dma_chan *chan,
     enum dma_status status;
     char *direction;
     unsigned long timeout, time_remain;
+    int rc;
 
     // Get the fields from the structures
     dma_comp = &dma_tfr->comp;
@@ -151,16 +152,21 @@ static int axidma_start_transfer(struct dma_chan *chan,
 
         if (time_remain == 0) {
             axidma_err("DMA %s transaction timed out.\n", direction);
-            return -ETIME;
+            rc = -ETIME;
+            goto stop_dma;
         } else if (status != DMA_SUCCESS) {
             axidma_err("DMA %s transaction did not succceed. Status is %d.\n",
                        direction, status);
-            // FIXME: Is this the correct return code?
-            return -ENOMEM;
+            rc = -EBUSY;
+            goto stop_dma;
         }
     }
 
     return 0;
+
+stop_dma:
+    chan->device->device_control(chan, DMA_TERMINATE_ALL, (unsigned long)NULL);
+    return rc;
 }
 
 /*----------------------------------------------------------------------------
@@ -198,31 +204,24 @@ int axidma_rw_transfer(struct axidma_device *dev,
     // Prep both the receive and transmit transfers
     rc = axidma_prep_transfer(dev->tx_chan, &tx_tfr);
     if (rc < 0) {
-        goto ret;
+        return rc;
     }
     rc = axidma_prep_transfer(dev->rx_chan, &rx_tfr);
     if (rc < 0) {
-        goto unmap_tx_buf;
+        return rc;
     }
 
     // Submit both transfers to the DMA engine, and wait on the receive transfer
     rc = axidma_start_transfer(dev->tx_chan, &tx_tfr);
     if (rc < 0) {
-        goto unmap_rx_buf;
+        return rc;
     }
     rc = axidma_start_transfer(dev->rx_chan, &rx_tfr);
     if (rc < 0) {
-        goto stop_rx_tfr;
+        return rc;
     }
 
     return 0;
-
-// FIXME: Do error handling
-stop_rx_tfr:
-unmap_rx_buf:
-unmap_tx_buf:
-ret:
-    return rc;
 }
 
 /*----------------------------------------------------------------------------
@@ -279,7 +278,11 @@ ret:
 
 void axidma_dma_exit(struct axidma_device *dev)
 {
-    // TODO: Check if any dma transactions are running
+    // Stop all running DMA transactions on all channels
+    dev->rx_chan->device->device_control(dev->rx_chan, DMA_TERMINATE_ALL,
+                                         (unsigned long)NULL);
+    dev->tx_chan->device->device_control(dev->tx_chan, DMA_TERMINATE_ALL,
+                                         (unsigned long)NULL);
 
     // Cleanup all DMA related structures
     dma_release_channel(dev->tx_chan);
