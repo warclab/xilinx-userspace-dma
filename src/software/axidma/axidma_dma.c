@@ -150,10 +150,10 @@ static int axidma_start_transfer(struct dma_chan *chan,
         status = dma_async_is_tx_complete(chan, dma_cookie, NULL, NULL);
 
         if (time_remain == 0) {
-            axidma_err("%s DMA transaction timed out.\n", direction);
+            axidma_err("DMA %s transaction timed out.\n", direction);
             return -ETIME;
         } else if (status != DMA_SUCCESS) {
-            axidma_err("%s DMA transaction did not succceed. Status is %d.\n",
+            axidma_err("DMA %s transaction did not succceed. Status is %d.\n",
                        direction, status);
             // FIXME: Is this the correct return code?
             return -ENOMEM;
