@@ -235,6 +235,7 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
                 return -EFAULT;
             }
             rc = axidma_read_transfer(dev, &trans_info);
+            break;
 
         case AXIDMA_DMA_WRITE:
             if (copy_from_user(&trans_info, arg_ptr, sizeof(trans_info)) != 0) {
@@ -243,6 +244,7 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
                 return -EFAULT;
             }
             rc = axidma_write_transfer(dev, &trans_info);
+            break;
 
         case AXIDMA_DMA_READWRITE:
             if (copy_from_user(&inout_trans_info, arg_ptr,

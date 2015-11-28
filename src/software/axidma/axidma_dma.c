@@ -189,7 +189,7 @@ int axidma_read_transfer(struct axidma_device *dev,
     struct axidma_transfer rx_tfr = {
         .buf = trans->buf,
         .buf_len = trans->buf_len,
-        .dir = DMA_MEM_TO_DEV,
+        .dir = DMA_DEV_TO_MEM,
         .wait = true,
     };
 
