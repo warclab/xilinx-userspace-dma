@@ -193,6 +193,7 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
     struct axidma_device *dev;
     struct axidma_transaction trans_info;
+    struct axidma_inout_transaction inout_trans_info;
     const void *__user arg_ptr;
     long rc;
 
@@ -227,13 +228,30 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
     // Perform the specified command
     switch (cmd) {
-        case AXIDMA_DMA_READWRITE:
+        case AXIDMA_DMA_READ:
             if (copy_from_user(&trans_info, arg_ptr, sizeof(trans_info)) != 0) {
                 axidma_err("Unable to copy transfer info from userspace for "
                            "AXIDMA_DMA_READWRITE\n");
                 return -EFAULT;
             }
-            rc = axidma_rw_transfer(dev, &trans_info);
+            rc = axidma_read_transfer(dev, &trans_info);
+
+        case AXIDMA_DMA_WRITE:
+            if (copy_from_user(&trans_info, arg_ptr, sizeof(trans_info)) != 0) {
+                axidma_err("Unable to copy transfer info from userspace for "
+                           "AXIDMA_DMA_READWRITE\n");
+                return -EFAULT;
+            }
+            rc = axidma_write_transfer(dev, &trans_info);
+
+        case AXIDMA_DMA_READWRITE:
+            if (copy_from_user(&inout_trans_info, arg_ptr,
+                               sizeof(inout_trans_info)) != 0) {
+                axidma_err("Unable to copy transfer info from userspace for "
+                           "AXIDMA_DMA_READWRITE\n");
+                return -EFAULT;
+            }
+            rc = axidma_rw_transfer(dev, &inout_trans_info);
             break;
 
         // Invalid command (already handled in preamble)

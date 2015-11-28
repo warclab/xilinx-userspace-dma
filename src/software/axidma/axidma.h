@@ -89,8 +89,12 @@ void axidma_chrdev_exit(struct axidma_device *dev);
 // Function prototypes
 int axidma_dma_init(struct axidma_device *dev);
 void axidma_dma_exit(struct axidma_device *dev);
+int axidma_read_transfer(struct axidma_device *dev,
+                          struct axidma_transaction *trans);
+int axidma_write_transfer(struct axidma_device *dev,
+                          struct axidma_transaction *trans);
 int axidma_rw_transfer(struct axidma_device *dev,
-                       struct axidma_transaction *trans);
+                       struct axidma_inout_transaction *trans);
 dma_addr_t axidma_uservirt_to_dma(void *user_addr);
 
 #endif /* AXIDMA_H_ */

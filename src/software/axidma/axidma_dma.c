@@ -180,10 +180,68 @@ int axidma_malloc(unsigned long size)
     return 0;
 }
 
+int axidma_read_transfer(struct axidma_device *dev,
+                         struct axidma_transaction *trans)
+{
+    int rc;
+
+    // Setup receive transfer structure for DMA
+    struct axidma_transfer rx_tfr = {
+        .buf = trans->buf,
+        .buf_len = trans->buf_len,
+        .dir = DMA_MEM_TO_DEV,
+        .wait = true,
+    };
+
+    // Prepare the receive transfer
+    rc = axidma_prep_transfer(dev->rx_chan, &rx_tfr);
+    if (rc < 0) {
+        return rc;
+    }
+
+    // Submit the receive transfer, and wait for it to complete
+    rc = axidma_start_transfer(dev->rx_chan, &rx_tfr);
+    if (rc < 0) {
+        return rc;
+    }
+
+    return 0;
+
+}
+
+int axidma_write_transfer(struct axidma_device *dev,
+                          struct axidma_transaction *trans)
+{
+    int rc;
+
+    // Setup transmit transfer structure for DMA
+    struct axidma_transfer tx_tfr = {
+        .buf = trans->buf,
+        .buf_len = trans->buf_len,
+        .dir = DMA_MEM_TO_DEV,
+        .wait = true,
+    };
+
+    // Prepare the transmit transfer
+    rc = axidma_prep_transfer(dev->tx_chan, &tx_tfr);
+    if (rc < 0) {
+        return rc;
+    }
+
+    // Submit the transmit transfer, and wait for it to complete
+    rc = axidma_start_transfer(dev->tx_chan, &tx_tfr);
+    if (rc < 0) {
+        return rc;
+    }
+
+    return 0;
+
+}
+
 /* Transfers data from the given source buffer out to the AXI DMA device, and
  * places the data received into the receive buffer. */
 int axidma_rw_transfer(struct axidma_device *dev,
-                       struct axidma_transaction *trans)
+                       struct axidma_inout_transaction *trans)
 {
     int rc;
 
