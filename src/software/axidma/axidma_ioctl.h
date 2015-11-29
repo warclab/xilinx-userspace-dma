@@ -26,8 +26,10 @@ struct axidma_num_channels {
 };
 
 struct axidma_channel_ids {
-    int *tx_device_ids;     // The transmit channel device id's
-    int *rx_device_ids;     // The receive channel device id's
+    int requested_tx;       // Requested number of transmit channels
+    int *tx_device_ids;     // Buffer to put the transmit channel device id's
+    int requested_rx;       // Requested number of receive channels
+    int *rx_device_ids;     // Buffer to put the receive channel device id's
 };
 
 struct axidma_transaction {

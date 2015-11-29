@@ -156,7 +156,8 @@ static int axidma_mmap(struct file *file, struct vm_area_struct *vma)
         axidma_err("Unable to allocate contiguous DMA memory region of size "
                    "%lu.\n", alloc_size);
         axidma_err("Please make sure that the kernel was built with CMA "
-                   "support (CONFIG_CMA and related configs).\n");
+                   "support (CONFIG_CMA and related configs) and that you "
+                   "specified `cma=<size>` on the kernel command line.\n");
         rc = -ENOMEM;
         goto free_vma_data;
     }
@@ -207,6 +208,38 @@ static bool axidma_access_ok(const void __user *arg, size_t size, bool readonly)
     return true;
 }
 
+/* Copies the requested number of channel ID's from the source buffer (in kernel
+ * space), to the destination buffer (in user space). */
+static int read_channel_ids(int *src_ids, int *dest_ids, int requested,
+                            int available, char *direction)
+{
+    // Sanity check the number of requested ID's
+    if (requested == 0) {
+        return 0;
+    } else if (requested < 0) {
+        axidma_err("Invalid number of channels requested.\n");
+        return -EINVAL;
+    } else if (requested > available) {
+        axidma_err("%d %s channels requested, but only %d are available.\n",
+                   requested, direction, available);
+        return -ENODEV;
+    }
+
+    // Verify that the destination buffer is valid
+    if (!axidma_access_ok(dest_ids, requested*sizeof(int), false)) {
+        return -EFAULT;
+    }
+
+    // Copy the ids into the userspace buffer
+    if (copy_to_user(dest_ids, src_ids, requested*sizeof(int)) != 0) {
+        axidma_err("Unable to copy channel ids to userspace for "
+                   "AXIDMA_GET_DMA_CHANNELS.\n");
+        return -EFAULT;
+    }
+
+    return 0;
+}
+
 static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
     struct axidma_device *dev;
@@ -215,7 +248,6 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
     struct axidma_transaction trans_info;
     struct axidma_inout_transaction inout_trans_info;
     void *__user arg_ptr;
-    size_t tx_size, rx_size;
     long rc;
 
     // Coerce the arguement as a userspace pointer
@@ -263,30 +295,22 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
                 return -EFAULT;
             }
 
-            // Verify that the channel array pointers are valid
+            // Get the number of available channels, and their ids
             axidma_get_num_channels(dev, &num_chans);
-            tx_size = num_chans.num_tx_channels * sizeof(int);
-            rx_size = num_chans.num_rx_channels * sizeof(int);
-            if (!axidma_access_ok(chan_ids.tx_device_ids, tx_size, false)) {
-                return -EFAULT;
-            }
-            if (!axidma_access_ok(chan_ids.rx_device_ids, rx_size, false)) {
-                return -EFAULT;
-            }
+            axidma_get_channel_ids(dev, &channels);
 
             // Copy the channel ids to the userspace buffers
-            axidma_get_channel_ids(dev, &channels);
-            if (copy_to_user(chan_ids.tx_device_ids, channels.tx_device_ids,
-                             tx_size) != 0) {
-                axidma_err("Unable to copy channel ids to userspace for "
-                           "AXIDMA_GET_DMA_CHANNELS.\n");
-                return -EFAULT;
+            rc = read_channel_ids(channels.tx_device_ids,
+                    chan_ids.tx_device_ids, chan_ids.requested_tx,
+                    num_chans.num_tx_channels, "transmit");
+            if (rc < 0) {
+                return rc;
             }
-            if (copy_to_user(chan_ids.rx_device_ids, channels.rx_device_ids,
-                             rx_size) != 0) {
-                axidma_err("Unable to copy channel ids to userspace for "
-                           "AXIDMA_GET_DMA_CHANNELS.\n");
-                return -EFAULT;
+            rc = read_channel_ids(channels.rx_device_ids,
+                    chan_ids.rx_device_ids, chan_ids.requested_rx,
+                    num_chans.num_rx_channels, "receive");
+            if (rc < 0) {
+                return rc;
             }
 
             rc = 0;
