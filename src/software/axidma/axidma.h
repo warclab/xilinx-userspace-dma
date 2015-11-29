@@ -51,8 +51,12 @@ struct axidma_device {
     struct class *dev_class;        // The device class for the character device
     struct cdev chrdev;             // The character device structure
 
-    struct dma_chan *tx_chan;       // The transmit channel for DMA
-    struct dma_chan *rx_chan;       // The receive channel for DMA
+    int num_tx_channels;            // The number of transmit channels
+    int num_rx_channels;            // The number of receive channels
+    int *tx_device_ids;             // The device id's for the transmit channels
+    int *rx_device_ids;             // The device id's for the receive channels
+    struct dma_chan **tx_chans;     // The available transmit channels for DMA
+    struct dma_chan **rx_chans;     // The available receive channels for DMA
 };
 
 /*----------------------------------------------------------------------------
@@ -71,24 +75,24 @@ int axidma_chrdev_init(struct axidma_device *dev);
 void axidma_chrdev_exit(struct axidma_device *dev);
 
 /*----------------------------------------------------------------------------
- * Character Device Definitions
+ * DMA Device Definitions
  *----------------------------------------------------------------------------*/
-
-// The size of the memory for the board (this is configured for the Zedboard)
-#define MEMORY_SIZE                 (512 * 1024 * 1024)
-
-// The size of the region to use for contiguous DMA allocations
-#define CMA_REGION_SIZE             (100 * 1024 * 1024)
 
 // Packs the device id into a DMA match structure, to match DMA devices
 #define PACK_DMA_MATCH(device_id, direction) \
     ((direction & 0xFF) | XILINX_DMA_IP_DMA |  \
      ((device_id) << XILINX_DMA_DEVICE_ID_SHIFT))
 
+/*----------------------------------------------------------------------------
+ * Function Prototypes
+ *----------------------------------------------------------------------------*/
 
-// Function prototypes
 int axidma_dma_init(struct axidma_device *dev);
 void axidma_dma_exit(struct axidma_device *dev);
+void axidma_get_num_channels(struct axidma_device *dev,
+                             struct axidma_num_channels *num_chans);
+void axidma_get_channel_ids(struct axidma_device *dev,
+                            struct axidma_channel_ids *chan_ids);
 int axidma_read_transfer(struct axidma_device *dev,
                           struct axidma_transaction *trans);
 int axidma_write_transfer(struct axidma_device *dev,

@@ -189,16 +189,37 @@ ret:
     return rc;
 }
 
+/* Verifies that the pointer can be read and/or written to with the given size.
+ * The user specifies the mode, either readonly, or not (read-write). */
+static bool axidma_access_ok(const void __user *arg, size_t size, bool readonly)
+{
+    // Note that VERIFY_WRITE implies VERIFY_WRITE, so read-write is handled
+    if (!readonly && !access_ok(VERIFY_WRITE, arg, size)) {
+        axidma_err("Argument address %p, size %zu cannot be written to.\n",
+                   arg, size);
+        return false;
+    } else if (!access_ok(VERIFY_READ, arg, size)) {
+        axidma_err("Argument address %p, size %zu cannot be read from.\n",
+                   arg, size);
+        return false;
+    }
+
+    return true;
+}
+
 static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
     struct axidma_device *dev;
+    struct axidma_num_channels num_chans;
+    struct axidma_channel_ids chan_ids, channels;
     struct axidma_transaction trans_info;
     struct axidma_inout_transaction inout_trans_info;
-    const void *__user arg_ptr;
+    void *__user arg_ptr;
+    size_t tx_size, rx_size;
     long rc;
 
     // Coerce the arguement as a userspace pointer
-    arg_ptr = (const void __user *)arg;
+    arg_ptr = (void __user *)arg;
 
     // Verify that this IOCTL is intended for our device, and is in range
     if (_IOC_TYPE(cmd) != AXIDMA_IOCTL_MAGIC) {
@@ -209,16 +230,13 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
         return -ENOTTY;
     }
 
-    /* Verify that the input argument can be accessed, and has the correct size
-     * Note taht VERIFY_WRITE implies VERIFY_READ, so _IOC_RW is handled. */
+    // Verify the input argument
     if ((_IOC_DIR(cmd) & _IOC_READ)) {
-        if (!access_ok(VERIFY_WRITE, arg_ptr, _IOC_SIZE(cmd))) {
-            axidma_err("Specified argument cannot be written to.\n");
+        if (!axidma_access_ok(arg_ptr, _IOC_SIZE(cmd), false)) {
             return -EFAULT;
         }
     } else if (_IOC_DIR(cmd) & _IOC_WRITE) {
-        if (!access_ok(VERIFY_READ, arg_ptr, _IOC_SIZE(cmd))) {
-            axidma_err("Specified argument cannot be read from.\n");
+        if (!axidma_access_ok(arg_ptr, _IOC_SIZE(cmd), true)) {
             return -EFAULT;
         }
     }
@@ -228,10 +246,56 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
     // Perform the specified command
     switch (cmd) {
+        case AXIDMA_GET_NUM_DMA_CHANNELS:
+            axidma_get_num_channels(dev, &num_chans);
+            if (copy_to_user(arg_ptr, &num_chans, sizeof(num_chans)) != 0) {
+                axidma_err("Unable to copy channel info to userspace for "
+                           "AXIDMA_GET_NUM_DMA_CHANNELS.\n");
+                return -EFAULT;
+            }
+            rc = 0;
+            break;
+
+        case AXIDMA_GET_DMA_CHANNELS:
+            if (copy_from_user(&chan_ids, arg_ptr, sizeof(chan_ids)) != 0) {
+                axidma_err("Unable to copy channel id buffer addresses from "
+                           "userspace for AXIDMA_GET_DMA_CHANNELS.\n");
+                return -EFAULT;
+            }
+
+            // Verify that the channel array pointers are valid
+            axidma_get_num_channels(dev, &num_chans);
+            tx_size = num_chans.num_tx_channels * sizeof(int);
+            rx_size = num_chans.num_rx_channels * sizeof(int);
+            if (!axidma_access_ok(chan_ids.tx_device_ids, tx_size, false)) {
+                return -EFAULT;
+            }
+            if (!axidma_access_ok(chan_ids.rx_device_ids, rx_size, false)) {
+                return -EFAULT;
+            }
+
+            // Copy the channel ids to the userspace buffers
+            axidma_get_channel_ids(dev, &channels);
+            if (copy_to_user(chan_ids.tx_device_ids, channels.tx_device_ids,
+                             tx_size) != 0) {
+                axidma_err("Unable to copy channel ids to userspace for "
+                           "AXIDMA_GET_DMA_CHANNELS.\n");
+                return -EFAULT;
+            }
+            if (copy_to_user(chan_ids.rx_device_ids, channels.rx_device_ids,
+                             rx_size) != 0) {
+                axidma_err("Unable to copy channel ids to userspace for "
+                           "AXIDMA_GET_DMA_CHANNELS.\n");
+                return -EFAULT;
+            }
+
+            rc = 0;
+            break;
+
         case AXIDMA_DMA_READ:
             if (copy_from_user(&trans_info, arg_ptr, sizeof(trans_info)) != 0) {
                 axidma_err("Unable to copy transfer info from userspace for "
-                           "AXIDMA_DMA_READWRITE\n");
+                           "AXIDMA_DMA_READ.\n");
                 return -EFAULT;
             }
             rc = axidma_read_transfer(dev, &trans_info);
@@ -240,7 +304,7 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
         case AXIDMA_DMA_WRITE:
             if (copy_from_user(&trans_info, arg_ptr, sizeof(trans_info)) != 0) {
                 axidma_err("Unable to copy transfer info from userspace for "
-                           "AXIDMA_DMA_READWRITE\n");
+                           "AXIDMA_DMA_WRITE.\n");
                 return -EFAULT;
             }
             rc = axidma_write_transfer(dev, &trans_info);
@@ -250,7 +314,7 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             if (copy_from_user(&inout_trans_info, arg_ptr,
                                sizeof(inout_trans_info)) != 0) {
                 axidma_err("Unable to copy transfer info from userspace for "
-                           "AXIDMA_DMA_READWRITE\n");
+                           "AXIDMA_DMA_READWRITE.\n");
                 return -EFAULT;
             }
             rc = axidma_rw_transfer(dev, &inout_trans_info);
