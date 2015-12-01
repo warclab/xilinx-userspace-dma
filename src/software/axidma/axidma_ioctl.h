@@ -47,6 +47,13 @@ struct axidma_inout_transaction {
     size_t rx_buf_len;      // The length of the receive buffer
 };
 
+struct axidma_video_transaction {
+    int device_id;          // The id of the DMA device to transmit video
+    void *buf1;             // The first of the double-buffers
+    void *buf2;             // The second of the double-buffers
+    size_t buf_len;         // The length of each buffer
+};
+
 /*----------------------------------------------------------------------------
  * IOCTL Definitions
  *----------------------------------------------------------------------------*/
@@ -68,9 +75,16 @@ struct axidma_inout_transaction {
                                              struct axidma_transaction)
 // Sends data out over the PL fabric, and then receives data back
 #define AXIDMA_DMA_READWRITE            _IOR(AXIDMA_IOCTL_MAGIC, 4, \
-                                              struct axidma_inout_transaction)
+                                             struct axidma_inout_transaction)
+/* Repeatedly sends out the given double frame buffer over the PL fabirc, until
+ * it is told to stop. Used to stream video out to a display device. */
+#define AXIDMA_DMA_VIDEO_WRITE          _IOR(AXIDMA_IOCTL_MAGIC, 5, \
+                                             struct axidma_video_transaction)
+/* Stops the all transactions on the specified DMA channel. The channel must
+ * be currently running an Video transaction. */
+#define AXIDMA_STOP_DMA                 _IO(AXIDMA_IOCTL_MAGIC, 6)
 
 // The number of IOCTL's implemented, used for verification
-#define AXIDMA_NUM_IOCTLS       5
+#define AXIDMA_NUM_IOCTLS       6
 
 #endif /* AXIDMA_IOCTL_H_ */

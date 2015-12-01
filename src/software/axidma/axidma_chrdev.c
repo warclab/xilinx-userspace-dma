@@ -247,6 +247,7 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
     struct axidma_channel_ids chan_ids, channels;
     struct axidma_transaction trans_info;
     struct axidma_inout_transaction inout_trans_info;
+    struct axidma_video_transaction video_trans_info;
     void *__user arg_ptr;
     long rc;
 
@@ -342,6 +343,20 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
                 return -EFAULT;
             }
             rc = axidma_rw_transfer(dev, &inout_trans_info);
+            break;
+
+        case AXIDMA_DMA_VIDEO_WRITE:
+            if (copy_from_user(&video_trans_info, arg_ptr,
+                               sizeof(video_trans_info)) != 0) {
+                axidma_err("Unable to copy transfer info from userspace for "
+                           "AXIDMA_VIDEO_WRITE.\n");
+                return -EFAULT;
+            }
+            rc = axidma_video_write_transfer(dev, &video_trans_info);
+            break;
+
+        case AXIDMA_STOP_DMA:
+            rc = axidma_stop_channel(dev, (int)arg);
             break;
 
         // Invalid command (already handled in preamble)
