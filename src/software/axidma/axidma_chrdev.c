@@ -210,14 +210,15 @@ static bool axidma_access_ok(const void __user *arg, size_t size, bool readonly)
 
 static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
+    long rc;
+    size_t size;
+    void *__user arg_ptr;
     struct axidma_device *dev;
     struct axidma_num_channels num_chans;
     struct axidma_channel_info chan_info, channels;
     struct axidma_transaction trans_info;
     struct axidma_inout_transaction inout_trans_info;
     struct axidma_video_transaction video_trans_info;
-    void *__user arg_ptr;
-    long rc;
 
     // Coerce the arguement as a userspace pointer
     arg_ptr = (void __user *)arg;
@@ -264,10 +265,11 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
                 return -EFAULT;
             }
 
-            // Get the number of available channels, and their ids
+            // Copy the channels array to userspace
+            axidma_get_num_channels(dev, &num_chans);
             axidma_get_channel_info(dev, &channels);
-            if (copy_to_user(chan_info.channels, channels.channels,
-                             dev->num_chans*sizeof(int)) != 0) {
+            size = num_chans.num_channels * sizeof(chan_info.channels[0]);
+            if (copy_to_user(chan_info.channels, channels.channels, size)) {
                 axidma_err("Unable to copy channel ids to userspace for "
                            "AXIDMA_GET_DMA_CHANNELS.\n");
                 return -EFAULT;
