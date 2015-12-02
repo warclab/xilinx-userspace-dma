@@ -14,44 +14,63 @@
 #ifndef AXIDMA_IOCTL_H_
 #define AXIDMA_IOCTL_H_
 
-#include <asm/ioctl.h>          // IOCTL macros
+#include <asm/ioctl.h>              // IOCTL macros
 
 /*----------------------------------------------------------------------------
  * IOCTL Argument Definitions
  *----------------------------------------------------------------------------*/
 
-struct axidma_num_channels {
-    int num_rx_channels;    // The number of receive channels available
-    int num_tx_channels;    // The number of transmit channels available
+// Direction from the persepctive of the processor
+enum axidma_dir {
+    AXIDMA_WRITE,                   // Transmits from memory to a device
+    AXIDMA_READ                     // Transmits from a device to memory
 };
 
-struct axidma_channel_ids {
-    int requested_tx;       // Requested number of transmit channels
-    int *tx_device_ids;     // Buffer to put the transmit channel device id's
-    int requested_rx;       // Requested number of receive channels
-    int *rx_device_ids;     // Buffer to put the receive channel device id's
+enum axidma_type {
+    AXIDMA_DMA,                     // Standard AXI DMA engine
+    AXIDMA_VDMA                     // Specialized AXI video DMA enginge
+};
+
+// TODO: Channel really should not be here
+struct axidma_chan {
+    enum axidma_dir dir;            // The DMA direction of the channel
+    enum axidma_type type;          // The DMA type of the channel
+    int channel_id;                 // The identifier for the device
+    struct dma_chan *chan;          // The DMA channel (ignore)
+};
+
+struct axidma_num_channels {
+    int num_channels;               // Total DMA channels in the system
+    int num_dma_tx_channels;        // DMA transmit channels available
+    int num_dma_rx_channels;        // DMA receive channels available
+    int num_vdma_tx_channels;       // VDMA transmit channels available
+    int num_vdma_rx_channels;       // VDMA receive channels available
+};
+
+struct axidma_channel_info {
+    struct axidma_chan *channels;   // Metadata about all available channels
 };
 
 struct axidma_transaction {
-    int device_id;          // The id of the DMA device to use
-    void *buf;              // The buffer used for the transaction
-    size_t buf_len;         // The length of the buffer
+    int channel_id;                 // The id of the DMA channel to use
+    void *buf;                      // The buffer used for the transaction
+    size_t buf_len;                 // The length of the buffer
 };
 
 struct axidma_inout_transaction {
-    int tx_device_id;       // The id of the DMA device to use for transmit
-    void *tx_buf;           // The buffer containing the data to send
-    size_t tx_buf_len;      // The length of the transmit buffer
-    int rx_device_id;       // The id of the DMA device to use for receive
-    void *rx_buf;           // The buffer to place the data in
-    size_t rx_buf_len;      // The length of the receive buffer
+    int tx_channel_id;              // The id of the transmit DMA channel
+    void *tx_buf;                   // The buffer containing the data to send
+    size_t tx_buf_len;              // The length of the transmit buffer
+    int rx_channel_id;              // The id of the receive DMA channel
+    void *rx_buf;                   // The buffer to place the data in
+    size_t rx_buf_len;              // The length of the receive buffer
 };
 
 struct axidma_video_transaction {
-    int device_id;          // The id of the DMA device to transmit video
-    void *buf1;             // The first of the double-buffers
-    void *buf2;             // The second of the double-buffers
-    size_t buf_len;         // The length of each buffer
+    int channel_id;             // The id of the DMA channel to transmit video
+    void *buf1;                 // The first of the double-buffers
+    void *buf2;                 // The second of the double-buffers
+    size_t buf_len;             // The length of each buffer
 };
 
 /*----------------------------------------------------------------------------
@@ -61,12 +80,12 @@ struct axidma_video_transaction {
 // The magic number used to distinguish IOCTL's for our device
 #define AXIDMA_IOCTL_MAGIC              'W'
 
-// Returns the number of receive and transmit channels available
+// Returns the number of DMA/VDMA channels available
 #define AXIDMA_GET_NUM_DMA_CHANNELS     _IOW(AXIDMA_IOCTL_MAGIC, 0, \
                                              struct axidma_num_channels)
-// Returns all available transmit and receive channels' device ids to the user
+// Returns all available DMA/VDMA channel ids to the user
 #define AXIDMA_GET_DMA_CHANNELS         _IOR(AXIDMA_IOCTL_MAGIC, 1, \
-                                             struct axidma_channel_ids)
+                                             struct axidma_channel_info)
 // Receives data from the PL fabric
 #define AXIDMA_DMA_READ                 _IOR(AXIDMA_IOCTL_MAGIC, 2, \
                                              struct axidma_transaction)

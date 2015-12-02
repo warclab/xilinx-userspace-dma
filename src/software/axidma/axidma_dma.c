@@ -34,10 +34,66 @@ struct axidma_transfer {
     int sg_len;                         // The length of the BD array
     bool cyclic_bd;                     // Cyclic BD's, mainly for video frames
     dma_cookie_t cookie;                // The DMA cookie for the transfer
-    enum dma_transfer_direction dir;    // The direction of the transfer
+    enum axidma_dir dir;                // The direction of the transfer
     bool wait;                          // Indicates if we should wait
     struct completion comp;             // A completion to use for waiting
 };
+
+/*----------------------------------------------------------------------------
+ * Enumeration Conversions
+ *----------------------------------------------------------------------------*/
+
+static enum dma_transfer_direction axidma_to_dma_dir(enum axidma_dir dma_dir)
+{
+    switch (dma_dir) {
+        case AXIDMA_WRITE:
+            return DMA_MEM_TO_DEV;
+        case AXIDMA_READ:
+            return DMA_DEV_TO_MEM;
+    }
+
+    BUG_ON("Invalid AXI DMA direction found.\n");
+    return -1;
+}
+
+static char *axidma_dir_to_string(enum axidma_dir dma_dir)
+{
+    switch (dma_dir) {
+        case AXIDMA_WRITE:
+            return "transmit";
+        case AXIDMA_READ:
+            return "receive";
+    }
+
+    BUG_ON("Invalid AXI DMA direction found.\n");
+    return NULL;
+}
+
+static int axidma_to_xilinx_type(enum axidma_type dma_type)
+{
+    switch (dma_type) {
+        case AXIDMA_DMA:
+            return XILINX_DMA_IP_DMA;
+        case AXIDMA_VDMA:
+            return XILINX_DMA_IP_VDMA;
+    }
+
+    BUG_ON("Invalid AXI DMA type found.\n");
+    return -1;
+}
+
+static char *axidma_type_to_string(enum axidma_type dma_type)
+{
+    switch (dma_type) {
+        case AXIDMA_DMA:
+            return "DMA";
+        case AXIDMA_VDMA:
+            return "VDMA";
+    }
+
+    BUG_ON("Invalid AXI DMA type found.\n");
+    return NULL;
+}
 
 /*----------------------------------------------------------------------------
  * DMA Operations Helper Functions
@@ -62,16 +118,19 @@ static int axidma_init_sg_entry(struct scatterlist *sg_list, int index,
     return 0;
 }
 
-static struct dma_chan *axidma_get_chan(int device_id, int device_ids[],
-                                        struct dma_chan *channels[], int len)
+static struct axidma_chan *axidma_get_chan(struct axidma_device *dev,
+    int chan_id, enum axidma_type chan_type, enum axidma_dir chan_dir)
 {
     int i;
+    struct axidma_chan *chan;
 
     // Search for an array entry with a matching device id
-    for (i = 0; i < len; i++)
+    for (i = 0; i < dev->num_chans; i++)
     {
-        if (device_ids[i] == device_id) {
-            return channels[i];
+        chan = &dev->channels[i];
+        if (chan->type == chan_type && chan->dir == chan_dir &&
+            chan->channel_id == chan_id) {
+            return chan;
         }
     }
 
@@ -80,15 +139,16 @@ static struct dma_chan *axidma_get_chan(int device_id, int device_ids[],
 
 static void axidma_dma_completion(void *completion)
 {
-    axidma_info("DMA transaction completed\n");
     if (completion != NULL) {
         complete(completion);
     }
 }
 
-static int axidma_prep_transfer(struct dma_chan *chan,
+// TODO:
+static int axidma_prep_transfer(struct axidma_chan *axidma_chan,
                                 struct axidma_transfer *dma_tfr)
 {
+    struct dma_chan *chan;
     struct dma_device *dma_dev;
     struct dma_async_tx_descriptor *dma_txnd;
     struct completion *dma_comp;
@@ -102,12 +162,13 @@ static int axidma_prep_transfer(struct dma_chan *chan,
     int rc;
 
     // Get the fields from the structures
+    chan = axidma_chan->chan;
     dma_comp = &dma_tfr->comp;
-    dma_dir = dma_tfr->dir;
+    dma_dir = axidma_to_dma_dir(dma_tfr->dir);
     dma_dev = chan->device;
     sg_list = dma_tfr->sg_list;
     sg_len = dma_tfr->sg_len;
-    direction = (dma_dir == DMA_MEM_TO_DEV) ? "transfer" : "receive";
+    direction = axidma_dir_to_string(dma_tfr->dir);
 
     // Configure the channel to only give one interrupt, with no delay
     dma_config.coalesc = 1;
@@ -158,7 +219,7 @@ stop_dma:
     return rc;
 }
 
-static int axidma_start_transfer(struct dma_chan *chan,
+static int axidma_start_transfer(struct axidma_chan *chan,
                                  struct axidma_transfer *dma_tfr)
 {
     struct completion *dma_comp;
@@ -171,16 +232,16 @@ static int axidma_start_transfer(struct dma_chan *chan,
     // Get the fields from the structures
     dma_comp = &dma_tfr->comp;
     dma_cookie = dma_tfr->cookie;
-    direction = (dma_tfr->dir == DMA_MEM_TO_DEV) ? "transmit": "receive";
+    direction = (dma_tfr->dir == AXIDMA_WRITE) ? "transmit": "receive";
 
     // Flush all pending transaction in the dma engine for this channel
-    dma_async_issue_pending(chan);
+    dma_async_issue_pending(chan->chan);
 
     // Wait for the completion timeout or the DMA to complete
     if (dma_tfr->wait) {
         timeout = msecs_to_jiffies(AXIDMA_DMA_TIMEOUT);
         time_remain = wait_for_completion_timeout(dma_comp, timeout);
-        status = dma_async_is_tx_complete(chan, dma_cookie, NULL, NULL);
+        status = dma_async_is_tx_complete(chan->chan, dma_cookie, NULL, NULL);
 
         if (time_remain == 0) {
             axidma_err("DMA %s transaction timed out.\n", direction);
@@ -197,7 +258,7 @@ static int axidma_start_transfer(struct dma_chan *chan,
     return 0;
 
 stop_dma:
-    chan->device->device_control(chan, DMA_TERMINATE_ALL, 0);
+    chan->chan->device->device_control(chan->chan, DMA_TERMINATE_ALL, 0);
     return rc;
 }
 
@@ -208,16 +269,18 @@ stop_dma:
 void axidma_get_num_channels(struct axidma_device *dev,
                              struct axidma_num_channels *num_chans)
 {
-    num_chans->num_tx_channels = dev->num_tx_channels;
-    num_chans->num_rx_channels = dev->num_rx_channels;
+    num_chans->num_channels = dev->num_chans;
+    num_chans->num_dma_tx_channels = dev->num_dma_tx_chans;
+    num_chans->num_dma_rx_channels = dev->num_dma_rx_chans;
+    num_chans->num_vdma_tx_channels = dev->num_vdma_tx_chans;
+    num_chans->num_vdma_rx_channels = dev->num_vdma_rx_chans;
     return;
 }
 
-void axidma_get_channel_ids(struct axidma_device *dev,
-                            struct axidma_channel_ids *chan_ids)
+void axidma_get_channel_info(struct axidma_device *dev,
+                             struct axidma_channel_info *chan_info)
 {
-    chan_ids->tx_device_ids = dev->tx_device_ids;
-    chan_ids->rx_device_ids = dev->rx_device_ids;
+    chan_info->channels = dev->channels;
     return;
 }
 
@@ -225,7 +288,7 @@ int axidma_read_transfer(struct axidma_device *dev,
                          struct axidma_transaction *trans)
 {
     int rc;
-    struct dma_chan *rx_chan;
+    struct axidma_chan *rx_chan;
     struct scatterlist sg_list;
 
     // Setup receive transfer structure for DMA
@@ -233,24 +296,22 @@ int axidma_read_transfer(struct axidma_device *dev,
         .sg_list = &sg_list,
         .sg_len = 1,
         .cyclic_bd = false,
-        .dir = DMA_DEV_TO_MEM,
+        .dir = AXIDMA_READ,
         .wait = true,
     };
 
     // Setup the scatter-gather list for the transfer (only one entry)
     sg_init_table(rx_tfr.sg_list, rx_tfr.sg_len);
-    rc = axidma_init_sg_entry(rx_tfr.sg_list, 0, trans->buf,
-                              trans->buf_len);
+    rc = axidma_init_sg_entry(rx_tfr.sg_list, 0, trans->buf, trans->buf_len);
     if (rc < 0) {
         return rc;
     }
 
     // Get the channel with the given channel id
-    rx_chan = axidma_get_chan(trans->device_id, dev->rx_device_ids,
-                              dev->rx_chans, dev->num_rx_channels);
+    rx_chan = axidma_get_chan(dev, trans->channel_id, AXIDMA_DMA, AXIDMA_READ);
     if (rx_chan == NULL) {
         axidma_err("Invalid device id %d for receive channel.\n",
-                   trans->device_id);
+                   trans->channel_id);
         return -ENODEV;
     }
 
@@ -273,7 +334,7 @@ int axidma_write_transfer(struct axidma_device *dev,
                           struct axidma_transaction *trans)
 {
     int rc;
-    struct dma_chan *tx_chan;
+    struct axidma_chan *tx_chan;
     struct scatterlist sg_list;
 
     // Setup transmit transfer structure for DMA
@@ -281,7 +342,7 @@ int axidma_write_transfer(struct axidma_device *dev,
         .sg_list = &sg_list,
         .sg_len = 1,
         .cyclic_bd = false,
-        .dir = DMA_MEM_TO_DEV,
+        .dir = AXIDMA_WRITE,
         .wait = true,
     };
 
@@ -293,11 +354,10 @@ int axidma_write_transfer(struct axidma_device *dev,
     }
 
     // Get the channel with the given id
-    tx_chan = axidma_get_chan(trans->device_id, dev->tx_device_ids,
-                              dev->tx_chans, dev->num_tx_channels);
+    tx_chan = axidma_get_chan(dev, trans->channel_id, AXIDMA_DMA, AXIDMA_WRITE);
     if (tx_chan == NULL) {
         axidma_err("Invalid device id %d for transmit channel.\n",
-                   trans->device_id);
+                   trans->channel_id);
         return -ENODEV;
     }
 
@@ -322,7 +382,7 @@ int axidma_rw_transfer(struct axidma_device *dev,
                        struct axidma_inout_transaction *trans)
 {
     int rc;
-    struct dma_chan *tx_chan, *rx_chan;
+    struct axidma_chan *tx_chan, *rx_chan;
     struct scatterlist tx_sg_list, rx_sg_list;
 
     // Setup receive and trasmit transfer structures for DMA
@@ -330,14 +390,14 @@ int axidma_rw_transfer(struct axidma_device *dev,
         .sg_list = &tx_sg_list,
         .sg_len = 1,
         .cyclic_bd = false,
-        .dir = DMA_MEM_TO_DEV,
+        .dir = AXIDMA_WRITE,
         .wait = false,
     };
     struct axidma_transfer rx_tfr = {
         .sg_list = &rx_sg_list,
         .sg_len = 1,
         .cyclic_bd = false,
-        .dir = DMA_DEV_TO_MEM,
+        .dir = AXIDMA_READ,
         .wait = true,
     };
 
@@ -356,18 +416,18 @@ int axidma_rw_transfer(struct axidma_device *dev,
     }
 
     // Get the transmit and receive channels with the given ids.
-    tx_chan = axidma_get_chan(trans->tx_device_id, dev->tx_device_ids,
-                              dev->tx_chans, dev->num_tx_channels);
+    tx_chan = axidma_get_chan(dev, trans->tx_channel_id, AXIDMA_DMA,
+                              AXIDMA_WRITE);
     if (tx_chan == NULL) {
         axidma_err("Invalid device id %d for transmit channel.\n",
-                   trans->tx_device_id);
+                   trans->tx_channel_id);
         return -ENODEV;
     }
-    rx_chan = axidma_get_chan(trans->rx_device_id, dev->rx_device_ids,
-                              dev->rx_chans, dev->num_rx_channels);
+    rx_chan = axidma_get_chan(dev, trans->rx_channel_id, AXIDMA_DMA,
+                              AXIDMA_READ);
     if (rx_chan == NULL) {
         axidma_err("Invalid device id %d for receive channel.\n",
-                   trans->rx_device_id);
+                   trans->rx_channel_id);
         return -ENODEV;
     }
 
@@ -398,7 +458,7 @@ int axidma_video_write_transfer(struct axidma_device *dev,
                                 struct axidma_video_transaction *trans)
 {
     int rc;
-    struct dma_chan *tx_chan;
+    struct axidma_chan *tx_chan;
     struct scatterlist sg_list[2];
 
     // Setup transmit transfer structure for DMA
@@ -406,7 +466,7 @@ int axidma_video_write_transfer(struct axidma_device *dev,
         .sg_list = sg_list,
         .sg_len = 2,
         .cyclic_bd = true,
-        .dir = DMA_MEM_TO_DEV,
+        .dir = AXIDMA_WRITE,
         .wait = false,
     };
 
@@ -423,11 +483,10 @@ int axidma_video_write_transfer(struct axidma_device *dev,
     }
 
     // Get the channel with the given id
-    tx_chan = axidma_get_chan(trans->device_id, dev->tx_device_ids,
-                              dev->tx_chans, dev->num_tx_channels);
+    tx_chan = axidma_get_chan(dev, trans->channel_id, AXIDMA_DMA, AXIDMA_WRITE);
     if (tx_chan == NULL) {
         axidma_err("Invalid device id %d for transmit channel.\n",
-                   trans->device_id);
+                   trans->channel_id);
         return -ENODEV;
     }
 
@@ -446,26 +505,26 @@ int axidma_video_write_transfer(struct axidma_device *dev,
     return 0;
 }
 
-int axidma_stop_channel(struct axidma_device *dev, int device_id)
+int axidma_stop_channel(struct axidma_device *dev, int channel_id)
 {
-    struct dma_chan *tx_chan, *rx_chan;
+    struct axidma_chan *tx_chan, *rx_chan;
 
     // Get the transmit and receive channels with the given ids.
-    tx_chan = axidma_get_chan(device_id, dev->tx_device_ids, dev->tx_chans,
-                              dev->num_tx_channels);
-    rx_chan = axidma_get_chan(device_id, dev->rx_device_ids, dev->rx_chans,
-                              dev->num_rx_channels);
+    tx_chan = axidma_get_chan(dev, channel_id, AXIDMA_DMA, AXIDMA_WRITE);
+    rx_chan = axidma_get_chan(dev, channel_id, AXIDMA_DMA, AXIDMA_READ);
     if (tx_chan == NULL && rx_chan == NULL) {
-        axidma_err("Invalid device id %d for DMA channel.\n", device_id);
+        axidma_err("Invalid device id %d for DMA channel.\n", channel_id);
         return -ENODEV;
     }
 
     // Terminate all DMA transactions on the transmit and receive channels
     if (tx_chan != NULL) {
-        return tx_chan->device->device_control(rx_chan, DMA_TERMINATE_ALL, 0);
+        return tx_chan->chan->device->device_control(tx_chan->chan,
+                                                     DMA_TERMINATE_ALL, 0);
     }
     if (rx_chan != NULL) {
-        return rx_chan->device->device_control(rx_chan, DMA_TERMINATE_ALL, 0);
+        return rx_chan->chan->device->device_control(rx_chan->chan,
+                                                     DMA_TERMINATE_ALL, 0);
     }
 
     return 0;
@@ -480,148 +539,111 @@ static bool axidma_dmadev_filter(struct dma_chan *chan, void *match)
     return *(int *)chan->private == (int)match;
 }
 
-static int axidma_probe_channels(struct axidma_device *dev,
-                                 dma_cap_mask_t dma_mask)
+static bool axidma_probe_chan(struct axidma_device *dev, int channel_id,
+    enum axidma_dir channel_dir, enum axidma_type channel_type,
+    dma_cap_mask_t dma_mask, int *num_type_chans)
 {
-    struct dma_chan *next_rx_chan, *next_tx_chan;
-    int tx_chan_match, rx_chan_match;
-    int device_id;
+    struct dma_chan *chan;
+    int chan_type, match;
+    enum dma_transfer_direction chan_dir;
 
-    // Probe the number of available receive and transmit channels
-    dev->num_tx_channels = 0;
-    dev->num_rx_channels = 0;
-    for (device_id = 0; true; device_id++)
-    {
-        // Setup the matches for the transmit and receive channels
-        tx_chan_match = PACK_DMA_MATCH(device_id, DMA_MEM_TO_DEV);
-        rx_chan_match = PACK_DMA_MATCH(device_id, DMA_DEV_TO_MEM);
+    // Pack together a match structure to identify the channel
+    chan_type = axidma_to_xilinx_type(channel_type);
+    chan_dir = axidma_to_dma_dir(channel_dir);
+    match = PACK_DMA_MATCH(channel_id, chan_type, chan_dir);
+    chan = dma_request_channel(dma_mask, axidma_dmadev_filter, (void *)match);
 
-        // Request the matching channels
-        next_tx_chan = dma_request_channel(dma_mask, axidma_dmadev_filter,
-                                           (void *)tx_chan_match);
-        next_rx_chan = dma_request_channel(dma_mask, axidma_dmadev_filter,
-                                           (void *)rx_chan_match);
-
-        // There are no more channels to be found
-        // TODO: Could sparse id's be an issue here?
-        if (next_tx_chan == NULL && next_rx_chan == NULL) {
-            break;
-        }
-
-        /* We've found a receive/transmit channel. We don't have a place to
-         * store it yet, so release the channel, we'll re-request it later. */
-        if (next_tx_chan != NULL) {
-            dev->num_tx_channels += 1;
-            dma_release_channel(next_tx_chan);
-        }
-        if (next_rx_chan != NULL) {
-            dev->num_rx_channels += 1;
-            dma_release_channel(next_rx_chan);
-        }
+    /* If we have a place to store the channels, do so. Otherwsie, this is the
+     * first probe, so we're counting channels, so we release them. */
+    if (chan != NULL && dev->channels == NULL) {
+        dma_release_channel(chan);
+        dev->num_chans += 1;
+        *num_type_chans += 1;
+    } else if (chan != NULL) {
+        dev->channels[dev->num_chans].dir = channel_dir;
+        dev->channels[dev->num_chans].type = channel_type;
+        dev->channels[dev->num_chans].channel_id = channel_id;
+        dev->channels[dev->num_chans].chan = chan;
+        dev->num_chans += 1;
+        *num_type_chans += 1;
     }
 
-    return 0;
+    // Indicate if we've found a channel
+    return chan != NULL;
+}
+
+static void axidma_probe_channels(struct axidma_device *dev,
+                                  dma_cap_mask_t dma_mask)
+{
+    int channel_id;
+    bool tx_found, rx_found;
+
+    // Probe the available DMA receive and transmit channels
+    dev->num_chans = 0;
+    dev->num_dma_tx_chans = 0;
+    dev->num_dma_rx_chans = 0;
+    tx_found = true;
+    rx_found = true;
+    for (channel_id = 0; tx_found || rx_found; channel_id++)
+    {
+        tx_found = axidma_probe_chan(dev, channel_id, AXIDMA_WRITE, AXIDMA_DMA,
+                                     dma_mask, &dev->num_dma_tx_chans);
+        rx_found = axidma_probe_chan(dev, channel_id, AXIDMA_READ, AXIDMA_DMA,
+                                     dma_mask, &dev->num_dma_rx_chans);
+    }
+
+    // Probe the available VDMA receive and transmit channels
+    dev->num_vdma_tx_chans = 0;
+    dev->num_vdma_rx_chans = 0;
+    tx_found = true;
+    rx_found = true;
+    for (channel_id = 0; tx_found || rx_found; channel_id++)
+    {
+        tx_found = axidma_probe_chan(dev, channel_id, AXIDMA_WRITE, AXIDMA_VDMA,
+                                     dma_mask, &dev->num_vdma_tx_chans);
+        rx_found = axidma_probe_chan(dev, channel_id, AXIDMA_READ, AXIDMA_VDMA,
+                                     dma_mask, &dev->num_vdma_rx_chans);
+    }
+
+    return;
 }
 
 int axidma_dma_init(struct axidma_device *dev)
 {
     dma_cap_mask_t dma_mask;
-    struct dma_chan *next_rx_chan, *next_tx_chan;
-    int rx_chan_index, tx_chan_index;
-    int tx_chan_match, rx_chan_match;
-    int device_id;
-    int rc;
 
     // Setup the desired DMA capabilities
     dma_cap_zero(dma_mask);
     dma_cap_set(DMA_SLAVE | DMA_PRIVATE, dma_mask);
 
-    // Probe the AXI DMA device, and find the number of channels
+    // Probe the AXI DMA devices, and find the number of channels
+    dev->channels = NULL;
     axidma_probe_channels(dev, dma_mask);
 
-    // If no channels were found, initalize the arrays to NULL
-    if (dev->num_tx_channels == 0 && dev->num_rx_channels == 0) {
+    if (dev->num_chans == 0) {
         axidma_info("No tramsit or receive channels were found.\n");
-        axidma_info("Found 0 receive channels and 0 transmit channels.\n");
-        dev->tx_device_ids = NULL;
-        dev->rx_device_ids = NULL;
-        rc = 0;
-        goto ret;
+        axidma_info("DMA: Found 0 receive channels and 0 transmit channels.\n");
+        axidma_info("VDMA: Found 0 receive channels and 0 transmit channels."
+                    "\n");
+        return 0;
     }
 
-    // Allocate arrays to store the channel pointers and device ids
-    dev->tx_device_ids = kmalloc(dev->num_tx_channels*sizeof(int), GFP_KERNEL);
-    if (dev->tx_device_ids == NULL) {
-        axidma_err("Unable to allocate memory for transmit channels.\n");
-        rc = -ENOMEM;
-        goto ret;
-    }
-    dev->tx_chans = kmalloc(dev->num_tx_channels*sizeof(dev->tx_chans[0]),
-                            GFP_KERNEL);
-    if (dev->tx_chans == NULL) {
-        axidma_err("Unable to allocate memory for transmit channels.\n");
-        rc = -ENOMEM;
-        goto free_tx_dev_ids;
-    }
-    dev->rx_device_ids = kmalloc(dev->num_rx_channels*sizeof(int), GFP_KERNEL);
-    if (dev->rx_device_ids == NULL) {
-        axidma_err("Unable to allocate memory for receive channels.\n");
-        rc = -ENOMEM;
-        goto free_tx_chans;
-    }
-    dev->rx_chans = kmalloc(dev->num_rx_channels*sizeof(dev->rx_chans[0]),
-                            GFP_KERNEL);
-    if (dev->rx_chans == NULL) {
-        axidma_err("Unable to allocate memory for receive channels.\n");
-        rc = -ENOMEM;
-        goto free_rx_dev_ids;
+    // Allocate an array to store all channel metadata structures
+    dev->channels= kmalloc(dev->num_chans*sizeof(dev->channels[0]), GFP_KERNEL);
+    if (dev->channels == NULL) {
+        axidma_err("Unable to allocate memory for channel structures.\n");
+        return -ENOMEM;
     }
 
-    // Request and acquire all the available channels
-    rx_chan_index = 0;
-    tx_chan_index = 0;
-    for (device_id = 0; true; device_id++)
-    {
-        // Request the transmit and receive channels for the current id
-        tx_chan_match = PACK_DMA_MATCH(device_id, DMA_MEM_TO_DEV);
-        rx_chan_match = PACK_DMA_MATCH(device_id, DMA_DEV_TO_MEM);
-        next_tx_chan = dma_request_channel(dma_mask, axidma_dmadev_filter,
-                                           (void *)tx_chan_match);
-        next_rx_chan = dma_request_channel(dma_mask, axidma_dmadev_filter,
-                                           (void *)rx_chan_match);
-
-        // There are no more channels to be found
-        // TODO: Could sparse id's be an issue here?
-        if (next_tx_chan == NULL && next_rx_chan == NULL) {
-            break;
-        }
-
-        // Add any found transmit and receive channels to the array
-        if (next_tx_chan != NULL) {
-            dev->tx_device_ids[tx_chan_index] = device_id;
-            dev->tx_chans[tx_chan_index] = next_tx_chan;
-            tx_chan_index += 1;
-        }
-        if (next_rx_chan != NULL) {
-            dev->rx_device_ids[rx_chan_index] = device_id;
-            dev->rx_chans[rx_chan_index] = next_rx_chan;
-            rx_chan_index += 1;
-        }
-    }
+    // Probe the AXI DMA devices, but store the channel structs this time
+    axidma_probe_channels(dev, dma_mask);
 
     // Inform the user of the DMA channels that were found
-    axidma_info("Found %d receive channels and %d transmit channels.\n",
-                dev->num_tx_channels, dev->num_rx_channels);
+    axidma_info("DMA: Found %d receive channels and %d transmit channels.\n",
+                dev->num_dma_tx_chans, dev->num_dma_rx_chans);
+    axidma_info("VDMA: Found %d receive channels and %d transmit channels.\n",
+                dev->num_vdma_tx_chans, dev->num_vdma_rx_chans);
     return 0;
-
-free_rx_dev_ids:
-    kfree(dev->rx_device_ids);
-free_tx_chans:
-    kfree(dev->tx_chans);
-free_tx_dev_ids:
-    kfree(dev->tx_device_ids);
-ret:
-    return rc;
 }
 
 void axidma_dma_exit(struct axidma_device *dev)
@@ -630,24 +652,15 @@ void axidma_dma_exit(struct axidma_device *dev)
     struct dma_chan *chan;
 
     // Stop all running DMA transactions on all channels, and release
-    for (i = 0; i < dev->num_tx_channels; i++)
+    for (i = 0; i < dev->num_chans; i++)
     {
-        chan = dev->tx_chans[i];
-        chan->device->device_control(chan, DMA_TERMINATE_ALL, 0);
-        dma_release_channel(chan);
-    }
-    for (i = 0; i < dev->num_rx_channels; i++)
-    {
-        chan = dev->rx_chans[i];
+        chan = dev->channels[i].chan;
         chan->device->device_control(chan, DMA_TERMINATE_ALL, 0);
         dma_release_channel(chan);
     }
 
-    // Free the channel arrays
-    kfree(dev->tx_device_ids);
-    kfree(dev->tx_chans);
-    kfree(dev->rx_device_ids);
-    kfree(dev->rx_chans);
+    // Free the channel array
+    kfree(dev->channels);
 
     return;
 }

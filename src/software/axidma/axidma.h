@@ -51,12 +51,12 @@ struct axidma_device {
     struct class *dev_class;        // The device class for the character device
     struct cdev chrdev;             // The character device structure
 
-    int num_tx_channels;            // The number of transmit channels
-    int num_rx_channels;            // The number of receive channels
-    int *tx_device_ids;             // The device id's for the transmit channels
-    int *rx_device_ids;             // The device id's for the receive channels
-    struct dma_chan **tx_chans;     // The available transmit channels for DMA
-    struct dma_chan **rx_chans;     // The available receive channels for DMA
+    int num_dma_tx_chans;           // The number of transmit DMA channels
+    int num_dma_rx_chans;           // The number of receive DMA channels
+    int num_vdma_tx_chans;          // The number of transmit VDMA channels
+    int num_vdma_rx_chans;          // The number of receive  VDMA channels
+    int num_chans;                  // The total number of DMA channels
+    struct axidma_chan *channels;   // All available channels
 };
 
 /*----------------------------------------------------------------------------
@@ -79,9 +79,8 @@ void axidma_chrdev_exit(struct axidma_device *dev);
  *----------------------------------------------------------------------------*/
 
 // Packs the device id into a DMA match structure, to match DMA devices
-#define PACK_DMA_MATCH(device_id, direction) \
-    ((direction & 0xFF) | XILINX_DMA_IP_DMA |  \
-     ((device_id) << XILINX_DMA_DEVICE_ID_SHIFT))
+#define PACK_DMA_MATCH(channel_id, type, direction) \
+    ((direction & 0xFF) | (type) | ((channel_id) << XILINX_DMA_DEVICE_ID_SHIFT))
 
 /*----------------------------------------------------------------------------
  * Function Prototypes
@@ -91,8 +90,8 @@ int axidma_dma_init(struct axidma_device *dev);
 void axidma_dma_exit(struct axidma_device *dev);
 void axidma_get_num_channels(struct axidma_device *dev,
                              struct axidma_num_channels *num_chans);
-void axidma_get_channel_ids(struct axidma_device *dev,
-                            struct axidma_channel_ids *chan_ids);
+void axidma_get_channel_info(struct axidma_device *dev,
+                             struct axidma_channel_info *chan_info);
 int axidma_read_transfer(struct axidma_device *dev,
                           struct axidma_transaction *trans);
 int axidma_write_transfer(struct axidma_device *dev,
@@ -101,7 +100,7 @@ int axidma_rw_transfer(struct axidma_device *dev,
                        struct axidma_inout_transaction *trans);
 int axidma_video_write_transfer(struct axidma_device *dev,
                                 struct axidma_video_transaction *trans);
-int axidma_stop_channel(struct axidma_device *dev, int device_id);
+int axidma_stop_channel(struct axidma_device *dev, int channel_id);
 dma_addr_t axidma_uservirt_to_dma(void *user_addr);
 
 #endif /* AXIDMA_H_ */

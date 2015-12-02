@@ -208,43 +208,11 @@ static bool axidma_access_ok(const void __user *arg, size_t size, bool readonly)
     return true;
 }
 
-/* Copies the requested number of channel ID's from the source buffer (in kernel
- * space), to the destination buffer (in user space). */
-static int read_channel_ids(int *src_ids, int *dest_ids, int requested,
-                            int available, char *direction)
-{
-    // Sanity check the number of requested ID's
-    if (requested == 0) {
-        return 0;
-    } else if (requested < 0) {
-        axidma_err("Invalid number of channels requested.\n");
-        return -EINVAL;
-    } else if (requested > available) {
-        axidma_err("%d %s channels requested, but only %d are available.\n",
-                   requested, direction, available);
-        return -ENODEV;
-    }
-
-    // Verify that the destination buffer is valid
-    if (!axidma_access_ok(dest_ids, requested*sizeof(int), false)) {
-        return -EFAULT;
-    }
-
-    // Copy the ids into the userspace buffer
-    if (copy_to_user(dest_ids, src_ids, requested*sizeof(int)) != 0) {
-        axidma_err("Unable to copy channel ids to userspace for "
-                   "AXIDMA_GET_DMA_CHANNELS.\n");
-        return -EFAULT;
-    }
-
-    return 0;
-}
-
 static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
     struct axidma_device *dev;
     struct axidma_num_channels num_chans;
-    struct axidma_channel_ids chan_ids, channels;
+    struct axidma_channel_info chan_info, channels;
     struct axidma_transaction trans_info;
     struct axidma_inout_transaction inout_trans_info;
     struct axidma_video_transaction video_trans_info;
@@ -290,28 +258,19 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             break;
 
         case AXIDMA_GET_DMA_CHANNELS:
-            if (copy_from_user(&chan_ids, arg_ptr, sizeof(chan_ids)) != 0) {
-                axidma_err("Unable to copy channel id buffer addresses from "
+            if (copy_from_user(&chan_info, arg_ptr, sizeof(chan_info)) != 0) {
+                axidma_err("Unable to copy channel buffer address from "
                            "userspace for AXIDMA_GET_DMA_CHANNELS.\n");
                 return -EFAULT;
             }
 
             // Get the number of available channels, and their ids
-            axidma_get_num_channels(dev, &num_chans);
-            axidma_get_channel_ids(dev, &channels);
-
-            // Copy the channel ids to the userspace buffers
-            rc = read_channel_ids(channels.tx_device_ids,
-                    chan_ids.tx_device_ids, chan_ids.requested_tx,
-                    num_chans.num_tx_channels, "transmit");
-            if (rc < 0) {
-                return rc;
-            }
-            rc = read_channel_ids(channels.rx_device_ids,
-                    chan_ids.rx_device_ids, chan_ids.requested_rx,
-                    num_chans.num_rx_channels, "receive");
-            if (rc < 0) {
-                return rc;
+            axidma_get_channel_info(dev, &channels);
+            if (copy_to_user(chan_info.channels, channels.channels,
+                             dev->num_chans*sizeof(int)) != 0) {
+                axidma_err("Unable to copy channel ids to userspace for "
+                           "AXIDMA_GET_DMA_CHANNELS.\n");
+                return -EFAULT;
             }
 
             rc = 0;
