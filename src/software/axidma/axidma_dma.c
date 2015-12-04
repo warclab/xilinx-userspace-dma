@@ -349,7 +349,7 @@ int axidma_read_transfer(struct axidma_device *dev,
         .sg_len = 1,
         .dir = AXIDMA_READ,
         .type = AXIDMA_DMA,
-        .wait = true,
+        .wait = trans->wait,
         .dma_tfr.cyclic_bd = false,
     };
 
@@ -396,7 +396,7 @@ int axidma_write_transfer(struct axidma_device *dev,
         .sg_len = 1,
         .dir = AXIDMA_WRITE,
         .type = AXIDMA_DMA,
-        .wait = true,
+        .wait = trans->wait,
         .dma_tfr.cyclic_bd = false,
     };
 
@@ -445,7 +445,7 @@ int axidma_rw_transfer(struct axidma_device *dev,
         .sg_len = 1,
         .dir = AXIDMA_WRITE,
         .type = AXIDMA_DMA,
-        .wait = false,
+        .wait = trans->wait,
         .dma_tfr.cyclic_bd = false,
     };
     struct axidma_transfer rx_tfr = {
@@ -453,7 +453,7 @@ int axidma_rw_transfer(struct axidma_device *dev,
         .sg_len = 1,
         .dir = AXIDMA_READ,
         .type = AXIDMA_DMA,
-        .wait = true,
+        .wait = trans->wait,
         .dma_tfr.cyclic_bd = false,
     };
 
