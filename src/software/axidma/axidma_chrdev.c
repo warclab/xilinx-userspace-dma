@@ -219,6 +219,7 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
     struct axidma_transaction trans_info;
     struct axidma_inout_transaction inout_trans_info;
     struct axidma_video_transaction video_trans_info;
+    struct axidma_chan chan_meta;
 
     // Coerce the arguement as a userspace pointer
     arg_ptr = (void __user *)arg;
@@ -316,8 +317,12 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             rc = axidma_video_write_transfer(dev, &video_trans_info);
             break;
 
-        case AXIDMA_STOP_DMA:
-            rc = axidma_stop_channel(dev, (int)arg);
+        case AXIDMA_STOP_DMA_CHANNEL:
+            if (copy_from_user(&chan_meta, arg_ptr, sizeof(chan_meta)) != 0) {
+                axidma_err("Unable to channel info from userspace for "
+                           "AXIDMA_STOP_DMA_CHANNEL.\n");
+            }
+            rc = axidma_stop_channel(dev, &chan_meta);
             break;
 
         // Invalid command (already handled in preamble)

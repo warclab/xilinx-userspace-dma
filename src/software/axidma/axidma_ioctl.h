@@ -107,9 +107,10 @@ struct axidma_video_transaction {
                                              struct axidma_video_transaction)
 /* Stops the all transactions on the specified DMA channel. The channel must
  * be currently running an Video transaction. */
-#define AXIDMA_STOP_DMA                 _IO(AXIDMA_IOCTL_MAGIC, 6)
+#define AXIDMA_STOP_DMA_CHANNEL         _IOR(AXIDMA_IOCTL_MAGIC, 6, \
+                                             struct axidma_chan)
 
 // The number of IOCTL's implemented, used for verification
-#define AXIDMA_NUM_IOCTLS       7
+#define AXIDMA_NUM_IOCTLS               7
 
 #endif /* AXIDMA_IOCTL_H_ */

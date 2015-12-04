@@ -101,7 +101,7 @@ int axidma_rw_transfer(struct axidma_device *dev,
                        struct axidma_inout_transaction *trans);
 int axidma_video_write_transfer(struct axidma_device *dev,
                                 struct axidma_video_transaction *trans);
-int axidma_stop_channel(struct axidma_device *dev, int channel_id);
+int axidma_stop_channel(struct axidma_device *dev, struct axidma_chan *chan);
 dma_addr_t axidma_uservirt_to_dma(void *user_addr);
 
 #endif /* AXIDMA_H_ */

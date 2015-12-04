@@ -363,7 +363,7 @@ int axidma_read_transfer(struct axidma_device *dev,
     // Get the channel with the given channel id
     rx_chan = axidma_get_chan(dev, trans->channel_id, AXIDMA_DMA, AXIDMA_READ);
     if (rx_chan == NULL) {
-        axidma_err("Invalid device id %d for receive channel.\n",
+        axidma_err("Invalid device id %d for DMA receive channel.\n",
                    trans->channel_id);
         return -ENODEV;
     }
@@ -410,7 +410,7 @@ int axidma_write_transfer(struct axidma_device *dev,
     // Get the channel with the given id
     tx_chan = axidma_get_chan(dev, trans->channel_id, AXIDMA_DMA, AXIDMA_WRITE);
     if (tx_chan == NULL) {
-        axidma_err("Invalid device id %d for transmit channel.\n",
+        axidma_err("Invalid device id %d for DMA transmit channel.\n",
                    trans->channel_id);
         return -ENODEV;
     }
@@ -475,14 +475,14 @@ int axidma_rw_transfer(struct axidma_device *dev,
     tx_chan = axidma_get_chan(dev, trans->tx_channel_id, AXIDMA_DMA,
                               AXIDMA_WRITE);
     if (tx_chan == NULL) {
-        axidma_err("Invalid device id %d for transmit channel.\n",
+        axidma_err("Invalid device id %d for DMA transmit channel.\n",
                    trans->tx_channel_id);
         return -ENODEV;
     }
     rx_chan = axidma_get_chan(dev, trans->rx_channel_id, AXIDMA_DMA,
                               AXIDMA_READ);
     if (rx_chan == NULL) {
-        axidma_err("Invalid device id %d for receive channel.\n",
+        axidma_err("Invalid device id %d for DMA receive channel.\n",
                    trans->rx_channel_id);
         return -ENODEV;
     }
@@ -550,7 +550,7 @@ int axidma_video_write_transfer(struct axidma_device *dev,
     tx_chan = axidma_get_chan(dev, trans->channel_id, AXIDMA_VDMA,
                               AXIDMA_WRITE);
     if (tx_chan == NULL) {
-        axidma_err("Invalid device id %d for transmit channel.\n",
+        axidma_err("Invalid device id %d for VDMA transmit channel.\n",
                    trans->channel_id);
         return -ENODEV;
     }
@@ -570,30 +570,23 @@ int axidma_video_write_transfer(struct axidma_device *dev,
     return 0;
 }
 
-int axidma_stop_channel(struct axidma_device *dev, int channel_id)
+int axidma_stop_channel(struct axidma_device *dev,
+                        struct axidma_chan *chan_info)
 {
-    struct axidma_chan *tx_chan, *rx_chan;
+    struct axidma_chan *chan;
 
     // Get the transmit and receive channels with the given ids.
-    // FIXME: FIXME:
-    tx_chan = axidma_get_chan(dev, channel_id, AXIDMA_VDMA, AXIDMA_WRITE);
-    rx_chan = axidma_get_chan(dev, channel_id, AXIDMA_VDMA, AXIDMA_READ);
-    if (tx_chan == NULL && rx_chan == NULL) {
-        axidma_err("Invalid device id %d for DMA channel.\n", channel_id);
+    chan = axidma_get_chan(dev, chan_info->channel_id, chan_info->type,
+                           chan_info->dir);
+    if (chan == NULL) {
+        axidma_err("Invalid channel id %d for %s %s channel.\n",
+            chan_info->channel_id, axidma_type_to_string(chan_info->type),
+            axidma_dir_to_string(chan_info->dir));
         return -ENODEV;
     }
 
-    // Terminate all DMA transactions on the transmit and receive channels
-    if (tx_chan != NULL) {
-        return tx_chan->chan->device->device_control(tx_chan->chan,
-                                                     DMA_TERMINATE_ALL, 0);
-    }
-    if (rx_chan != NULL) {
-        return rx_chan->chan->device->device_control(rx_chan->chan,
-                                                     DMA_TERMINATE_ALL, 0);
-    }
-
-    return 0;
+    // Terminate all DMA transactions on the given channel
+    return chan->chan->device->device_control(chan->chan, DMA_TERMINATE_ALL, 0);
 }
 
 /*----------------------------------------------------------------------------
