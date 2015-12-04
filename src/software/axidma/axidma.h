@@ -80,7 +80,8 @@ void axidma_chrdev_exit(struct axidma_device *dev);
 
 // Packs the device id into a DMA match structure, to match DMA devices
 #define PACK_DMA_MATCH(channel_id, type, direction) \
-    ((direction & 0xFF) | (type) | ((channel_id) << XILINX_DMA_DEVICE_ID_SHIFT))
+    (((direction) & 0xFF) | (type) | \
+     ((channel_id) << XILINX_DMA_DEVICE_ID_SHIFT))
 
 /*----------------------------------------------------------------------------
  * Function Prototypes

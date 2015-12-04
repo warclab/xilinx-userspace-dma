@@ -30,13 +30,25 @@
 
 // A convenient structure to pass between prep and start transfer functions
 struct axidma_transfer {
-    struct scatterlist *sg_list;        // List of buffer descriptors
     int sg_len;                         // The length of the BD array
-    bool cyclic_bd;                     // Cyclic BD's, mainly for video frames
-    dma_cookie_t cookie;                // The DMA cookie for the transfer
-    enum axidma_dir dir;                // The direction of the transfer
+    struct scatterlist *sg_list;        // List of buffer descriptors
     bool wait;                          // Indicates if we should wait
+    dma_cookie_t cookie;                // The DMA cookie for the transfer
     struct completion comp;             // A completion to use for waiting
+    enum axidma_dir dir;                // The direction of the transfer
+    enum axidma_type type;              // The type of the transfer (VDMA/DMA)
+
+    // DMA and VDMA specific fields
+    union {
+        struct {
+            bool cyclic_bd;             // Cyclic BD's, for continous trasfers
+        } dma_tfr;
+        struct {
+            int width;                  // Width of the image in pixels
+            int height;                 // Height of the image in lines
+            int depth;                  // Size of each pixel in bytes
+        } vdma_tfr;
+    };
 };
 
 /*----------------------------------------------------------------------------
@@ -137,6 +149,36 @@ static struct axidma_chan *axidma_get_chan(struct axidma_device *dev,
     return NULL;
 }
 
+static void axidma_setup_dma_config(struct xilinx_dma_config *dma_config,
+        enum dma_transfer_direction direction, bool cyclic_bd)
+{
+    dma_config->direction = direction;  // Either to memory or from memory
+    dma_config->coalesc = 1;            // Interrupt for one transfer completion
+    dma_config->delay = 0;              // Disable the delay counter interrupt
+    dma_config->reset = 0;              // Don't reset the DMA engine
+    dma_config->cyclic_bd = cyclic_bd;  // Select a continuous transfer or not
+    return;
+}
+
+static void axidma_setup_vdma_config(struct xilinx_vdma_config *dma_config,
+                                     int width, int height, int depth)
+{
+    dma_config->vsize = height;         // Height of the image (in lines)
+    dma_config->hsize = width * depth;  // Width of the image (in bytes)
+    dma_config->stride = width * depth; // Number of bytes to process per line
+    dma_config->frm_dly = 0;            // Number of frames to delay
+    dma_config->gen_lock = 0;           // No genlock, VDMA runs freely
+    dma_config->master = 0;             // VDMA is the genlock master
+    dma_config->frm_cnt_en = 0;         // No interrupts based on frame count
+    dma_config->park = 0;               // Continuously process all frames
+    dma_config->park_frm = 0;           // Frame to stop (park) at (N/A)
+    dma_config->coalesc = 0;            // No transfer completion interrupts
+    dma_config->delay = 0;              // Disable the delay counter interrupt
+    dma_config->reset = 0;              // Don't reset the channel
+    dma_config->ext_fsync = 0;          // VDMA handles synchronizes itself
+    return;
+}
+
 static void axidma_dma_completion(void *completion)
 {
     if (completion != NULL) {
@@ -144,7 +186,6 @@ static void axidma_dma_completion(void *completion)
     }
 }
 
-// TODO:
 static int axidma_prep_transfer(struct axidma_chan *axidma_chan,
                                 struct axidma_transfer *dma_tfr)
 {
@@ -152,13 +193,15 @@ static int axidma_prep_transfer(struct axidma_chan *axidma_chan,
     struct dma_device *dma_dev;
     struct dma_async_tx_descriptor *dma_txnd;
     struct completion *dma_comp;
+    struct xilinx_vdma_config vdma_config;
     struct xilinx_dma_config dma_config;
+    void *config;
     enum dma_transfer_direction dma_dir;
     enum dma_ctrl_flags dma_flags;
     struct scatterlist *sg_list;
     int sg_len;
     dma_cookie_t dma_cookie;
-    char *direction;
+    char *direction, *type;
     int rc;
 
     // Get the fields from the structures
@@ -169,15 +212,22 @@ static int axidma_prep_transfer(struct axidma_chan *axidma_chan,
     sg_list = dma_tfr->sg_list;
     sg_len = dma_tfr->sg_len;
     direction = axidma_dir_to_string(dma_tfr->dir);
+    type = axidma_type_to_string(dma_tfr->type);
 
-    // Configure the channel to only give one interrupt, with no delay
-    dma_config.coalesc = 1;
-    dma_config.delay = 0;
-    dma_config.cyclic_bd = dma_tfr->cyclic_bd;
-    rc = dma_dev->device_control(chan, DMA_SLAVE_CONFIG,
-                                 (unsigned long)&dma_config);
+    // Configure the channel appropiately based on whether it's DMA or VDMA
+    if (dma_tfr->type == AXIDMA_DMA) {
+        axidma_setup_dma_config(&dma_config, dma_tfr->dma_tfr.cyclic_bd,
+                                dma_dir);
+        config = &dma_config;
+    } else if (dma_tfr->type == AXIDMA_VDMA) {
+        axidma_setup_vdma_config(&vdma_config, dma_tfr->vdma_tfr.width,
+            dma_tfr->vdma_tfr.height, dma_tfr->vdma_tfr.depth);
+        config = &vdma_config;
+    }
+    rc = dma_dev->device_control(chan, DMA_SLAVE_CONFIG, (unsigned long)config);
     if (rc < 0) {
-        axidma_err("Device control for the %s channel failed.\n", direction);
+        axidma_err("Device control for the %s %s channel failed.\n", type,
+                   direction);
         goto stop_dma;
     }
 
@@ -187,8 +237,8 @@ static int axidma_prep_transfer(struct axidma_chan *axidma_chan,
     dma_txnd = dma_dev->device_prep_slave_sg(chan, sg_list, sg_len, dma_dir,
                                              dma_flags, NULL);
     if (dma_txnd == NULL) {
-        axidma_err("Unable to prepare the dma engine for the %s buffer.\n",
-                   direction);
+        axidma_err("Unable to prepare the dma engine for the %s %s buffer.\n",
+                   type, direction);
         rc = -EBUSY;
         goto stop_dma;
     }
@@ -198,14 +248,15 @@ static int axidma_prep_transfer(struct axidma_chan *axidma_chan,
     if (dma_tfr->wait) {
         init_completion(dma_comp);
         dma_txnd->callback_param = dma_comp;
+        dma_txnd->callback = axidma_dma_completion;
     } else {
         dma_txnd->callback_param = NULL;
+        dma_txnd->callback = NULL;
     }
-    dma_txnd->callback = axidma_dma_completion;
     dma_cookie = dma_txnd->tx_submit(dma_txnd);
     if (dma_submit_error(dma_cookie)) {
-        axidma_err("Unable to submit the %s dma transaction to the engine.\n",
-                   direction);
+        axidma_err("Unable to submit the %s %s transaction to the engine.\n",
+                   direction, type);
         rc = -EBUSY;
         goto stop_dma;
     }
@@ -225,14 +276,15 @@ static int axidma_start_transfer(struct axidma_chan *chan,
     struct completion *dma_comp;
     dma_cookie_t dma_cookie;
     enum dma_status status;
-    char *direction;
+    char *direction, *type;
     unsigned long timeout, time_remain;
     int rc;
 
     // Get the fields from the structures
     dma_comp = &dma_tfr->comp;
     dma_cookie = dma_tfr->cookie;
-    direction = (dma_tfr->dir == AXIDMA_WRITE) ? "transmit": "receive";
+    direction = axidma_dir_to_string(dma_tfr->dir);
+    type = axidma_type_to_string(dma_tfr->type);
 
     // Flush all pending transaction in the dma engine for this channel
     dma_async_issue_pending(chan->chan);
@@ -244,12 +296,12 @@ static int axidma_start_transfer(struct axidma_chan *chan,
         status = dma_async_is_tx_complete(chan->chan, dma_cookie, NULL, NULL);
 
         if (time_remain == 0) {
-            axidma_err("DMA %s transaction timed out.\n", direction);
+            axidma_err("%s %s transaction timed out.\n", type, direction);
             rc = -ETIME;
             goto stop_dma;
         } else if (status != DMA_SUCCESS) {
-            axidma_err("DMA %s transaction did not succceed. Status is %d.\n",
-                       direction, status);
+            axidma_err("%s %s transaction did not succceed. Status is %d.\n",
+                       type, direction, status);
             rc = -EBUSY;
             goto stop_dma;
         }
@@ -295,9 +347,10 @@ int axidma_read_transfer(struct axidma_device *dev,
     struct axidma_transfer rx_tfr = {
         .sg_list = &sg_list,
         .sg_len = 1,
-        .cyclic_bd = false,
         .dir = AXIDMA_READ,
+        .type = AXIDMA_DMA,
         .wait = true,
+        .dma_tfr.cyclic_bd = false,
     };
 
     // Setup the scatter-gather list for the transfer (only one entry)
@@ -341,9 +394,10 @@ int axidma_write_transfer(struct axidma_device *dev,
     struct axidma_transfer tx_tfr = {
         .sg_list = &sg_list,
         .sg_len = 1,
-        .cyclic_bd = false,
         .dir = AXIDMA_WRITE,
+        .type = AXIDMA_DMA,
         .wait = true,
+        .dma_tfr.cyclic_bd = false,
     };
 
     // Setup the scatter-gather list for the transfer (only one entry)
@@ -389,16 +443,18 @@ int axidma_rw_transfer(struct axidma_device *dev,
     struct axidma_transfer tx_tfr = {
         .sg_list = &tx_sg_list,
         .sg_len = 1,
-        .cyclic_bd = false,
         .dir = AXIDMA_WRITE,
+        .type = AXIDMA_DMA,
         .wait = false,
+        .dma_tfr.cyclic_bd = false,
     };
     struct axidma_transfer rx_tfr = {
         .sg_list = &rx_sg_list,
         .sg_len = 1,
-        .cyclic_bd = false,
         .dir = AXIDMA_READ,
+        .type = AXIDMA_DMA,
         .wait = true,
+        .dma_tfr.cyclic_bd = false,
     };
 
     // Setup the scatter-gather list for the transfers (only one entry)
@@ -458,32 +514,41 @@ int axidma_video_write_transfer(struct axidma_device *dev,
                                 struct axidma_video_transaction *trans)
 {
     int rc;
+    size_t image_size;
     struct axidma_chan *tx_chan;
-    struct scatterlist sg_list[2];
+    struct scatterlist sg_list[3];
 
     // Setup transmit transfer structure for DMA
     struct axidma_transfer tx_tfr = {
         .sg_list = sg_list,
-        .sg_len = 2,
-        .cyclic_bd = true,
+        .sg_len = 3,
         .dir = AXIDMA_WRITE,
+        .type = AXIDMA_VDMA,
         .wait = false,
+        .vdma_tfr.width = trans->width,
+        .vdma_tfr.height = trans->height,
+        .vdma_tfr.depth = trans->depth,
     };
 
-    /* Setup the scatter gather table to be a cyclic list between the
-     * two buffers in the double frame buffer. */
+    // Setup the three scatter gather entries for the triple frame buffer
+    image_size = trans->width * trans->height * trans->depth;
     sg_init_table(tx_tfr.sg_list, tx_tfr.sg_len);
-    rc = axidma_init_sg_entry(tx_tfr.sg_list, 0, trans->buf1, trans->buf_len);
+    rc = axidma_init_sg_entry(tx_tfr.sg_list, 0, trans->buf1, image_size);
     if (rc < 0) {
         return rc;
     }
-    rc = axidma_init_sg_entry(tx_tfr.sg_list, 1, trans->buf2, trans->buf_len);
+    rc = axidma_init_sg_entry(tx_tfr.sg_list, 1, trans->buf2, image_size);
+    if (rc < 0) {
+        return rc;
+    }
+    rc = axidma_init_sg_entry(tx_tfr.sg_list, 2, trans->buf3, image_size);
     if (rc < 0) {
         return rc;
     }
 
     // Get the channel with the given id
-    tx_chan = axidma_get_chan(dev, trans->channel_id, AXIDMA_DMA, AXIDMA_WRITE);
+    tx_chan = axidma_get_chan(dev, trans->channel_id, AXIDMA_VDMA,
+                              AXIDMA_WRITE);
     if (tx_chan == NULL) {
         axidma_err("Invalid device id %d for transmit channel.\n",
                    trans->channel_id);
@@ -510,8 +575,9 @@ int axidma_stop_channel(struct axidma_device *dev, int channel_id)
     struct axidma_chan *tx_chan, *rx_chan;
 
     // Get the transmit and receive channels with the given ids.
-    tx_chan = axidma_get_chan(dev, channel_id, AXIDMA_DMA, AXIDMA_WRITE);
-    rx_chan = axidma_get_chan(dev, channel_id, AXIDMA_DMA, AXIDMA_READ);
+    // FIXME: FIXME:
+    tx_chan = axidma_get_chan(dev, channel_id, AXIDMA_VDMA, AXIDMA_WRITE);
+    rx_chan = axidma_get_chan(dev, channel_id, AXIDMA_VDMA, AXIDMA_READ);
     if (tx_chan == NULL && rx_chan == NULL) {
         axidma_err("Invalid device id %d for DMA channel.\n", channel_id);
         return -ENODEV;
@@ -622,8 +688,8 @@ int axidma_dma_init(struct axidma_device *dev)
 
     if (dev->num_chans == 0) {
         axidma_info("No tramsit or receive channels were found.\n");
-        axidma_info("DMA: Found 0 receive channels and 0 transmit channels.\n");
-        axidma_info("VDMA: Found 0 receive channels and 0 transmit channels."
+        axidma_info("DMA: Found 0 transmit channels and 0 receive channels.\n");
+        axidma_info("VDMA: Found 0 transmit channels and 0 receive channels."
                     "\n");
         return 0;
     }
@@ -639,9 +705,9 @@ int axidma_dma_init(struct axidma_device *dev)
     axidma_probe_channels(dev, dma_mask);
 
     // Inform the user of the DMA channels that were found
-    axidma_info("DMA: Found %d receive channels and %d transmit channels.\n",
+    axidma_info("DMA: Found %d transmit channels and %d receive channels.\n",
                 dev->num_dma_tx_chans, dev->num_dma_rx_chans);
-    axidma_info("VDMA: Found %d receive channels and %d transmit channels.\n",
+    axidma_info("VDMA: Found %d transmit channels and %d receive channels.\n",
                 dev->num_vdma_tx_chans, dev->num_vdma_rx_chans);
     return 0;
 }

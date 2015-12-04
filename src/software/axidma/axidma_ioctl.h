@@ -20,6 +20,9 @@
  * IOCTL Argument Definitions
  *----------------------------------------------------------------------------*/
 
+// Forward declaration of the kernel's DMA channel type (opaque to userspace)
+struct dma_chan;
+
 // Direction from the persepctive of the processor
 enum axidma_dir {
     AXIDMA_WRITE,                   // Transmits from memory to a device
@@ -68,13 +71,16 @@ struct axidma_inout_transaction {
 
 struct axidma_video_transaction {
     int channel_id;             // The id of the DMA channel to transmit video
-    void *buf1;                 // The first of the double-buffers
-    void *buf2;                 // The second of the double-buffers
-    size_t buf_len;             // The length of each buffer
+    void *buf1;                 // The first of the triple-buffers
+    void *buf2;                 // The second of the triple-buffers
+    void *buf3;                 // The third of the triple-buffers
+    size_t width;               // The width of the image in pixels
+    size_t height;              // The height of the image in lines
+    size_t depth;               // The size of each pixel in bytes
 };
 
 /*----------------------------------------------------------------------------
- * IOCTL Definitions
+ * IOCTL Interface
  *----------------------------------------------------------------------------*/
 
 // The magic number used to distinguish IOCTL's for our device
@@ -104,6 +110,6 @@ struct axidma_video_transaction {
 #define AXIDMA_STOP_DMA                 _IO(AXIDMA_IOCTL_MAGIC, 6)
 
 // The number of IOCTL's implemented, used for verification
-#define AXIDMA_NUM_IOCTLS       6
+#define AXIDMA_NUM_IOCTLS       7
 
 #endif /* AXIDMA_IOCTL_H_ */
