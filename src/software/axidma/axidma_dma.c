@@ -216,8 +216,8 @@ static int axidma_prep_transfer(struct axidma_chan *axidma_chan,
 
     // Configure the channel appropiately based on whether it's DMA or VDMA
     if (dma_tfr->type == AXIDMA_DMA) {
-        axidma_setup_dma_config(&dma_config, dma_tfr->dma_tfr.cyclic_bd,
-                                dma_dir);
+        axidma_setup_dma_config(&dma_config, dma_dir,
+                                dma_tfr->dma_tfr.cyclic_bd);
         config = &dma_config;
     } else if (dma_tfr->type == AXIDMA_VDMA) {
         axidma_setup_vdma_config(&vdma_config, dma_tfr->vdma_tfr.width,
@@ -445,7 +445,7 @@ int axidma_rw_transfer(struct axidma_device *dev,
         .sg_len = 1,
         .dir = AXIDMA_WRITE,
         .type = AXIDMA_DMA,
-        .wait = trans->wait,
+        .wait = false,
         .dma_tfr.cyclic_bd = false,
     };
     struct axidma_transfer rx_tfr = {
