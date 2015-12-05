@@ -215,11 +215,11 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
     void *__user arg_ptr;
     struct axidma_device *dev;
     struct axidma_num_channels num_chans;
-    struct axidma_channel_info chan_info, channels;
-    struct axidma_transaction trans_info;
-    struct axidma_inout_transaction inout_trans_info;
-    struct axidma_video_transaction video_trans_info;
-    struct axidma_chan chan_meta;
+    struct axidma_channel_info usr_chans, kern_chans;
+    struct axidma_transaction trans;
+    struct axidma_inout_transaction inout_trans;
+    struct axidma_video_transaction video_trans;
+    struct axidma_chan chan_info;
 
     // Coerce the arguement as a userspace pointer
     arg_ptr = (void __user *)arg;
@@ -260,7 +260,7 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             break;
 
         case AXIDMA_GET_DMA_CHANNELS:
-            if (copy_from_user(&chan_info, arg_ptr, sizeof(chan_info)) != 0) {
+            if (copy_from_user(&usr_chans, arg_ptr, sizeof(chan_info)) != 0) {
                 axidma_err("Unable to copy channel buffer address from "
                            "userspace for AXIDMA_GET_DMA_CHANNELS.\n");
                 return -EFAULT;
@@ -268,9 +268,9 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
             // Copy the channels array to userspace
             axidma_get_num_channels(dev, &num_chans);
-            axidma_get_channel_info(dev, &channels);
-            size = num_chans.num_channels * sizeof(chan_info.channels[0]);
-            if (copy_to_user(chan_info.channels, channels.channels, size)) {
+            axidma_get_channel_info(dev, &kern_chans);
+            size = num_chans.num_channels * sizeof(kern_chans.channels[0]);
+            if (copy_to_user(usr_chans.channels, kern_chans.channels, size)) {
                 axidma_err("Unable to copy channel ids to userspace for "
                            "AXIDMA_GET_DMA_CHANNELS.\n");
                 return -EFAULT;
@@ -280,49 +280,59 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             break;
 
         case AXIDMA_DMA_READ:
-            if (copy_from_user(&trans_info, arg_ptr, sizeof(trans_info)) != 0) {
+            if (copy_from_user(&trans, arg_ptr, sizeof(trans)) != 0) {
                 axidma_err("Unable to copy transfer info from userspace for "
                            "AXIDMA_DMA_READ.\n");
                 return -EFAULT;
             }
-            rc = axidma_read_transfer(dev, &trans_info);
+            rc = axidma_read_transfer(dev, &trans);
             break;
 
         case AXIDMA_DMA_WRITE:
-            if (copy_from_user(&trans_info, arg_ptr, sizeof(trans_info)) != 0) {
+            if (copy_from_user(&trans, arg_ptr, sizeof(trans)) != 0) {
                 axidma_err("Unable to copy transfer info from userspace for "
                            "AXIDMA_DMA_WRITE.\n");
                 return -EFAULT;
             }
-            rc = axidma_write_transfer(dev, &trans_info);
+            rc = axidma_write_transfer(dev, &trans);
             break;
 
         case AXIDMA_DMA_READWRITE:
-            if (copy_from_user(&inout_trans_info, arg_ptr,
-                               sizeof(inout_trans_info)) != 0) {
+            if (copy_from_user(&inout_trans, arg_ptr,
+                               sizeof(inout_trans)) != 0) {
                 axidma_err("Unable to copy transfer info from userspace for "
                            "AXIDMA_DMA_READWRITE.\n");
                 return -EFAULT;
             }
-            rc = axidma_rw_transfer(dev, &inout_trans_info);
+            rc = axidma_rw_transfer(dev, &inout_trans);
             break;
 
         case AXIDMA_DMA_VIDEO_WRITE:
-            if (copy_from_user(&video_trans_info, arg_ptr,
-                               sizeof(video_trans_info)) != 0) {
+            if (copy_from_user(&video_trans, arg_ptr,
+                               sizeof(video_trans)) != 0) {
                 axidma_err("Unable to copy transfer info from userspace for "
                            "AXIDMA_VIDEO_WRITE.\n");
                 return -EFAULT;
             }
-            rc = axidma_video_write_transfer(dev, &video_trans_info);
+
+            // Verify that we can access the array of frame buffers
+            size = video_trans.num_frame_buffers *
+                   sizeof(video_trans.frame_buffers[0]);
+            if (!axidma_access_ok(video_trans.frame_buffers, size, true)) {
+                axidma_err("Unable to copy frame buffer addresses from "
+                           "userspace for AXIDMA_DMA_VIDEO_WRITE.\n");
+                return -EFAULT;
+            }
+
+            rc = axidma_video_write_transfer(dev, &video_trans);
             break;
 
         case AXIDMA_STOP_DMA_CHANNEL:
-            if (copy_from_user(&chan_meta, arg_ptr, sizeof(chan_meta)) != 0) {
+            if (copy_from_user(&chan_info, arg_ptr, sizeof(chan_info)) != 0) {
                 axidma_err("Unable to channel info from userspace for "
                            "AXIDMA_STOP_DMA_CHANNEL.\n");
             }
-            rc = axidma_stop_channel(dev, &chan_meta);
+            rc = axidma_stop_channel(dev, &chan_info);
             break;
 
         // Invalid command (already handled in preamble)

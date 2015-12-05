@@ -516,36 +516,37 @@ int axidma_rw_transfer(struct axidma_device *dev,
 int axidma_video_write_transfer(struct axidma_device *dev,
                                 struct axidma_video_transaction *trans)
 {
-    int rc;
+    int rc, i;
     size_t image_size;
     struct axidma_chan *tx_chan;
-    struct scatterlist sg_list[3];
+    struct scatterlist *sg_list;
 
     // Setup transmit transfer structure for DMA
     struct axidma_transfer tx_tfr = {
-        .sg_list = sg_list,
-        .sg_len = 3,
+        .sg_len = trans->num_frame_buffers,
         .dir = AXIDMA_WRITE,
         .type = AXIDMA_DMA,
         .wait = false,
         .dma_tfr.cyclic_bd = true,
     };
 
-    // Setup the three scatter gather entries for the triple frame buffer
+    // Allocate an array to store the scatter list structures for the buffers
+    tx_tfr.sg_list = kmalloc(tx_tfr.sg_len * sizeof(*sg_list), GFP_KERNEL);
+    if (tx_tfr.sg_list == NULL) {
+        axidma_err("Unable to allocate memory for the scatter-gather list.\n");
+        rc = -ENOMEM;
+        goto ret;
+    }
+
+    // For each frame, setup a scatter-gather entry
     image_size = trans->width * trans->height * trans->depth;
-    axidma_info("Image size is: %zu\n", image_size);
-    sg_init_table(tx_tfr.sg_list, tx_tfr.sg_len);
-    rc = axidma_init_sg_entry(tx_tfr.sg_list, 0, trans->buf1, image_size);
-    if (rc < 0) {
-        return rc;
-    }
-    rc = axidma_init_sg_entry(tx_tfr.sg_list, 1, trans->buf2, image_size);
-    if (rc < 0) {
-        return rc;
-    }
-    rc = axidma_init_sg_entry(tx_tfr.sg_list, 2, trans->buf3, image_size);
-    if (rc < 0) {
-        return rc;
+    for (i = 0; i < tx_tfr.sg_len; i++)
+    {
+        rc = axidma_init_sg_entry(tx_tfr.sg_list, i, trans->frame_buffers[i],
+                                  image_size);
+        if (rc < 0) {
+            goto free_sg_list;
+        }
     }
 
     // Get the channel with the given id
@@ -554,21 +555,22 @@ int axidma_video_write_transfer(struct axidma_device *dev,
     if (tx_chan == NULL) {
         axidma_err("Invalid device id %d for DMA transmit channel.\n",
                    trans->channel_id);
-        return -ENODEV;
+        rc = -ENODEV;
+        goto free_sg_list;
     }
 
     // Prepare the transmit transfer
     rc = axidma_prep_transfer(tx_chan, &tx_tfr);
     if (rc < 0) {
-        return rc;
+        goto free_sg_list;
     }
 
     // Submit the transfer, and immediately return
     rc = axidma_start_transfer(tx_chan, &tx_tfr);
-    if (rc < 0) {
-        return rc;
-    }
 
+free_sg_list:
+    kfree(tx_tfr.sg_list);
+ret:
     return 0;
 }
 

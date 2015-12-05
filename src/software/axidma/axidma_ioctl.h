@@ -73,9 +73,8 @@ struct axidma_inout_transaction {
 
 struct axidma_video_transaction {
     int channel_id;             // The id of the DMA channel to transmit video
-    void *buf1;                 // The first of the triple-buffers
-    void *buf2;                 // The second of the triple-buffers
-    void *buf3;                 // The third of the triple-buffers
+    int num_frame_buffers;      // The number of frame buffers to use.
+    void **frame_buffers;       // The frame buffer addresses to use for video
     size_t width;               // The width of the image in pixels
     size_t height;              // The height of the image in lines
     size_t depth;               // The size of each pixel in bytes
