@@ -28,6 +28,9 @@
 // The default timeout for DMA is 10 seconds
 #define AXIDMA_DMA_TIMEOUT      10000
 
+// The maximum permitted ID for a DMA channel
+#define AXIDMA_MAX_ID           100
+
 // A convenient structure to pass between prep and start transfer functions
 struct axidma_transfer {
     int sg_len;                         // The length of the BD array
@@ -598,7 +601,7 @@ static bool axidma_dmadev_filter(struct dma_chan *chan, void *match)
     return *(int *)chan->private == (int)match;
 }
 
-static bool axidma_probe_chan(struct axidma_device *dev, int channel_id,
+static void axidma_probe_chan(struct axidma_device *dev, int channel_id,
     enum axidma_dir channel_dir, enum axidma_type channel_type,
     dma_cap_mask_t dma_mask, int *num_type_chans)
 {
@@ -627,41 +630,35 @@ static bool axidma_probe_chan(struct axidma_device *dev, int channel_id,
         *num_type_chans += 1;
     }
 
-    // Indicate if we've found a channel
-    return chan != NULL;
+    return;
 }
 
 static void axidma_probe_channels(struct axidma_device *dev,
                                   dma_cap_mask_t dma_mask)
 {
     int channel_id;
-    bool tx_found, rx_found;
 
     // Probe the available DMA receive and transmit channels
     dev->num_chans = 0;
     dev->num_dma_tx_chans = 0;
     dev->num_dma_rx_chans = 0;
-    tx_found = true;
-    rx_found = true;
-    for (channel_id = 0; tx_found || rx_found; channel_id++)
+    for (channel_id = 0; channel_id < AXIDMA_MAX_ID; channel_id++)
     {
-        tx_found = axidma_probe_chan(dev, channel_id, AXIDMA_WRITE, AXIDMA_DMA,
-                                     dma_mask, &dev->num_dma_tx_chans);
-        rx_found = axidma_probe_chan(dev, channel_id, AXIDMA_READ, AXIDMA_DMA,
-                                     dma_mask, &dev->num_dma_rx_chans);
+        axidma_probe_chan(dev, channel_id, AXIDMA_WRITE, AXIDMA_DMA, dma_mask,
+                          &dev->num_dma_tx_chans);
+        axidma_probe_chan(dev, channel_id, AXIDMA_READ, AXIDMA_DMA, dma_mask,
+                          &dev->num_dma_rx_chans);
     }
 
     // Probe the available VDMA receive and transmit channels
     dev->num_vdma_tx_chans = 0;
     dev->num_vdma_rx_chans = 0;
-    tx_found = true;
-    rx_found = true;
-    for (channel_id = 0; tx_found || rx_found; channel_id++)
+    for (channel_id = 0; channel_id < AXIDMA_MAX_ID; channel_id++)
     {
-        tx_found = axidma_probe_chan(dev, channel_id, AXIDMA_WRITE, AXIDMA_VDMA,
-                                     dma_mask, &dev->num_vdma_tx_chans);
-        rx_found = axidma_probe_chan(dev, channel_id, AXIDMA_READ, AXIDMA_VDMA,
-                                     dma_mask, &dev->num_vdma_rx_chans);
+        axidma_probe_chan(dev, channel_id, AXIDMA_WRITE, AXIDMA_VDMA, dma_mask,
+                          &dev->num_vdma_tx_chans);
+        axidma_probe_chan(dev, channel_id, AXIDMA_READ, AXIDMA_VDMA, dma_mask,
+                          &dev->num_vdma_rx_chans);
     }
 
     return;
@@ -680,7 +677,7 @@ int axidma_dma_init(struct axidma_device *dev)
     axidma_probe_channels(dev, dma_mask);
 
     if (dev->num_chans == 0) {
-        axidma_info("No tramsit or receive channels were found.\n");
+        axidma_info("No DMA channels were found.\n");
         axidma_info("DMA: Found 0 transmit channels and 0 receive channels.\n");
         axidma_info("VDMA: Found 0 transmit channels and 0 receive channels."
                     "\n");
