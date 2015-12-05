@@ -526,15 +526,14 @@ int axidma_video_write_transfer(struct axidma_device *dev,
         .sg_list = sg_list,
         .sg_len = 3,
         .dir = AXIDMA_WRITE,
-        .type = AXIDMA_VDMA,
+        .type = AXIDMA_DMA,
         .wait = false,
-        .vdma_tfr.width = trans->width,
-        .vdma_tfr.height = trans->height,
-        .vdma_tfr.depth = trans->depth,
+        .dma_tfr.cyclic_bd = true,
     };
 
     // Setup the three scatter gather entries for the triple frame buffer
     image_size = trans->width * trans->height * trans->depth;
+    axidma_info("Image size is: %zu\n", image_size);
     sg_init_table(tx_tfr.sg_list, tx_tfr.sg_len);
     rc = axidma_init_sg_entry(tx_tfr.sg_list, 0, trans->buf1, image_size);
     if (rc < 0) {
@@ -550,10 +549,10 @@ int axidma_video_write_transfer(struct axidma_device *dev,
     }
 
     // Get the channel with the given id
-    tx_chan = axidma_get_chan(dev, trans->channel_id, AXIDMA_VDMA,
+    tx_chan = axidma_get_chan(dev, trans->channel_id, AXIDMA_DMA,
                               AXIDMA_WRITE);
     if (tx_chan == NULL) {
-        axidma_err("Invalid device id %d for VDMA transmit channel.\n",
+        axidma_err("Invalid device id %d for DMA transmit channel.\n",
                    trans->channel_id);
         return -ENODEV;
     }
