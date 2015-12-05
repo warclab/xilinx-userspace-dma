@@ -17,6 +17,16 @@
 #include <asm/ioctl.h>              // IOCTL macros
 
 /*----------------------------------------------------------------------------
+ * IOCTL Defintions
+ *----------------------------------------------------------------------------*/
+
+// The standard name for the AXI DMA device
+#define AXIDMA_DEV_NAME     "axidma"
+
+// The standard path to the AXI DMA device
+#define AXIDMA_DEV_PATH     ("/dev/" AXIDMA_DEV_NAME)
+
+/*----------------------------------------------------------------------------
  * IOCTL Argument Definitions
  *----------------------------------------------------------------------------*/
 

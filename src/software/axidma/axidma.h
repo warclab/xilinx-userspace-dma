@@ -64,7 +64,7 @@ struct axidma_device {
  *----------------------------------------------------------------------------*/
 
 // Default name of the character of the device
-#define CHRDEV_NAME                 MODULE_NAME
+#define CHRDEV_NAME                 AXIDMA_DEV_NAME
 // Default minor number for the device
 #define MINOR_NUMBER                0
 // The default number of character devices for DMA
