@@ -87,27 +87,157 @@ struct axidma_video_transaction {
 // The magic number used to distinguish IOCTL's for our device
 #define AXIDMA_IOCTL_MAGIC              'W'
 
-// Returns the number of DMA/VDMA channels available
+/**
+ * Returns the number of available DMA channels in the system.
+ *
+ * This writes to the structure given as input by the user, telling the
+ * numbers for all DMA channels in the system.
+ *
+ * Outputs:
+ *  - num_channels - The total number of DMA channels in the system.
+ *  - num_dma_tx_channels - The number of transmit AXI DMA channels
+ *  - num_dma_rx_channels - The number of receive AXI DMA channels
+ *  - num_vdma_tx_channels - The number of transmit AXI VDMA channels
+ *  - num_vdma_rx_channels - The number of receive AXI VDMA channels
+ **/
 #define AXIDMA_GET_NUM_DMA_CHANNELS     _IOW(AXIDMA_IOCTL_MAGIC, 0, \
                                              struct axidma_num_channels)
-// Returns all available DMA/VDMA channel ids to the user
+
+/**
+ * Returns information on all DMA channels in the system.
+ *
+ * This function writes to the array specified in the pointer given to the
+ * struct structures representing all data about a given DMA channel (device id,
+ * direction, etc.). The array must be able to hold at least the number of
+ * elements returned by AXIDMA_GET_NUM_DMA_CHANNELS.
+ *
+ * The important piece of information returned in the id for the channels.
+ * This, along with the direction and type, uniquely identifies a DMA channel
+ * in the system, and this is how you refer to a channel in later calls.
+ *
+ * Inputs:
+ *  - channels - A pointer to a region of memory that can hold at least
+ *               num_channels * sizeof(struct axidma_chan) bytes.
+ *
+ * Outputs:
+ *  - channels - An array of structures of the following format:
+ *  - An array of structures with the following fields:
+ *       - dir - The direction of the channel (either read or write).
+ *       - type - The type of the channel (either normal DMA or video DMA).
+ *       - channel_id - The (not necessarily unqiue) integer id for the channel.
+ *       - chan - This field has no meaning and can be safely ignored.
+ **/
 #define AXIDMA_GET_DMA_CHANNELS         _IOR(AXIDMA_IOCTL_MAGIC, 1, \
                                              struct axidma_channel_info)
-// Receives data from the PL fabric
+
+/**
+ * Receives the data from the logic fabric into the processing system.
+ *
+ * This function receives data from a device on the PL fabric through
+ * AXI DMA into memory. The device id should be an id that is returned by the
+ * get dma channels ioctl. The user can specify if the call should wait for the
+ * transfer to complete, or if it should return immediately.
+ *
+ * The specified buffer must be within an address range that was allocated by a
+ * call to mmap with the AXI DMA device. Also, the buffer must be able to hold
+ * at least `buf_len` bytes.
+ *
+ * Inputs:
+ *  - wait - Indicates if the call should be blocking or non-blocking
+ *  - channel_id - The id for the channel you want receive data over.
+ *  - buf - The address of the buffer you want to receive the data in.
+ *  - buf_len - The number of bytes to receive.
+ **/
 #define AXIDMA_DMA_READ                 _IOR(AXIDMA_IOCTL_MAGIC, 2, \
                                              struct axidma_transaction)
-// Send data out over the PL fabric
+
+/**
+ * Sends the given data from the processing system to the logic fabric.
+ *
+ * This function sends data from memory to a device on the PL fabric through
+ * AXI DMA. The device id should be an id that is returned by the get dma
+ * channels ioctl. The user can specify if the call should wait for the transfer
+ * to complete, or if it should return immediately.
+ *
+ * The specified buffer must be within an address range that was allocated by a
+ * call to mmap with the AXI DMA device. Also, the buffer must be able to hold
+ * at least `buf_len` bytes.
+ *
+ * Inputs:
+ *  - wait - Indicates if the call should be blocking or non-blocking
+ *  - channel_id - The id for the channel you want to send data over.
+ *  - buf - The address of the data you want to send.
+ *  - buf_len - The number of bytes to send.
+ **/
 #define AXIDMA_DMA_WRITE                _IOR(AXIDMA_IOCTL_MAGIC, 3, \
                                              struct axidma_transaction)
-// Sends data out over the PL fabric, and then receives data back
+
+/**
+ * Performs a two-way transfer between the logic fabric and processing system.
+ *
+ * This function both sends data to the PL and receives data from the PL fabric.
+ * It is intended for DMA transfers that are tightly coupled together
+ * (e.g. converting an image to grayscale on the PL fabric). The device id's for
+ * both channels should be ones that are returned by the get dma ioctl. The user
+ * can specify if the call should block. If it blocks, it will wait until the
+ * receive transaction completes.
+ *
+ * The specified buffers must be within an address range that was allocated by a
+ * call to mmap with the AXI DMA device. Also, each buffer must be able to hold
+ * at least the number of bytes that are being transfered.
+ *
+ * Inputs:
+ *  - wait - Indicates if the call should be blocking or non-blocking
+ *  - tx_channel_id - The id for the channel you want transmit data on.
+ *  - tx_buf - The address of the data you want to send.
+ *  - tx_buf_len - The number of bytes you want to send.
+ *  - rx_buf - The address of the buffer you want to receive data in.
+ *  - rx_buf_len - The number of bytes you want to receive.
+ **/
 #define AXIDMA_DMA_READWRITE            _IOR(AXIDMA_IOCTL_MAGIC, 4, \
                                              struct axidma_inout_transaction)
-/* Repeatedly sends out the given double frame buffer over the PL fabirc, until
- * it is told to stop. Used to stream video out to a display device. */
+
+/**
+ * Performs frame-buffer based transfers to a display on the logic fabric.
+ *
+ * This function performs a video transfer to the logic fabric. It sends
+ * the given buffers to logic fabric (intended for a display pipeline). When it
+ * reaches the end of the buffers, it loops back and re-sends the first buffer.
+ * This is used for frame-buffer based graphics.
+ *
+ * All of the frame buffers must be within an address range that was allocated
+ * by a call to mmap with the AXI DMA device. Also, each buffer must
+ * be able to hold a frame (width * height * depth bytes). The input array of
+ * buffers must be a memory location that can holds `num_frame_buffers`
+ * addresses.
+ *
+ * This call is always non-blocking as the DMA engine will run forever. In order
+ * to end the transaction, you must make a call to the stop dma channel ioctl.
+ *
+ * Inputs:
+ *  - channel_id - The id for the channel you want to send data over.
+ *  - num_frame_buffers - The number of frame buffers you're using.
+ *  - frame_buffers - An array of the frame buffer addresses.
+ *  - width - The width of the frame (image) in pixels.
+ *  - height - The height of the frame in lines.
+ *  - depth - The size of each pixel in the frame in bytes.
+ **/
 #define AXIDMA_DMA_VIDEO_WRITE          _IOR(AXIDMA_IOCTL_MAGIC, 5, \
                                              struct axidma_video_transaction)
-/* Stops the all transactions on the specified DMA channel. The channel must
- * be currently running an Video transaction. */
+
+/**
+ * Stops all transactions on the given DMA channel.
+ *
+ * This function flushes all in-progress transactions, and discards all pending
+ * transactions on the given DMA channel. The specified id should be one that
+ * was returned by the get dma channels ioctl.
+ *
+ * Inputs:
+ *  - dir - The direction of the channel (either read or write).
+ *  - type - The type of the channel (either normal DMA or video DMA).
+ *  - channel_id - The (not necessarily unqiue) integer id for the channel.
+ *  - chan - This field is unused an can be safely left uninitialized.
+ */
 #define AXIDMA_STOP_DMA_CHANNEL         _IOR(AXIDMA_IOCTL_MAGIC, 6, \
                                              struct axidma_chan)
 
