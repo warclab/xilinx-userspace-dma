@@ -76,29 +76,26 @@ int robust_read(int fd, char *buf, int buf_size)
     {
         buf_offset = buf_size - bytes_remain;
         bytes_read = read(fd, buf + buf_offset, bytes_remain);
+        bytes_remain = (bytes_read > 0) ? bytes_remain - bytes_read
+                                        : bytes_remain;
 
         /* If we were interrupted by a signal, then repeat the read. Otherwise,
          * if we encountered a different error or reached EOF then stop. */
-        if (bytes_read == -EINTR) {
-            continue;
-        } else if (bytes_read < 0) {
-            break;
+        if (bytes_read < 0 && bytes_read != -EINTR) {
+            return bytes_read;
         } else if (bytes_read == 0) {
-            break;
+            return buf_size - bytes_remain;
         }
     }
 
-    // If we've succeeded, return the number of bytes read
-    if (bytes_read == 0) {
-        return buf_size - bytes_remain;
-    } else {
-        return bytes_read;
-    }
+    // We should never reach here
+    assert(false);
+    return -EINVAL;
 }
 
 int robust_write(int fd, char *buf, int buf_size)
 {
-    int bytes_remain, bytes_read;
+    int bytes_remain, bytes_written;
     int buf_offset;
 
     // Read out the bytes into the buffer, accounting for EINTR
@@ -106,23 +103,20 @@ int robust_write(int fd, char *buf, int buf_size)
     while (true)
     {
         buf_offset = buf_size - bytes_remain;
-        bytes_read = write(fd, buf + buf_offset, bytes_remain);
+        bytes_written = write(fd, buf + buf_offset, bytes_remain);
+        bytes_remain = (bytes_written > 0) ? bytes_remain - bytes_written
+                                           : bytes_remain;
 
         /* If we were interrupted by a signal, then repeat the write. Otherwise,
          * if we encountered a different error or reached EOF then stop. */
-        if (bytes_read == -EINTR) {
-            continue;
-        } else if (bytes_read < 0) {
-            break;
-        } else if (bytes_read == 0) {
-            break;
+        if (bytes_written < 0 && bytes_written != -EINTR) {
+            return bytes_written;
+        } else if (bytes_written == 0) {
+            return buf_size - bytes_remain;
         }
     }
 
-    // If we've succeeded, return the number of bytes written
-    if (bytes_read == 0) {
-        return buf_size - bytes_remain;
-    } else {
-        return bytes_read;
-    }
+    // We should never reach here
+    assert(false);
+    return -EINVAL;
 }
