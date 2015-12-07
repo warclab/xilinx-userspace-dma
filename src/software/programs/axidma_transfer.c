@@ -11,7 +11,7 @@
  * By default it uses the lowest numbered channels for the transmit and receive,
  * unless overriden by the user. The amount of data transfered is automatically
  * determined from the file size. Unless specified, the output file size is
- * made to be 10 times the input size (to account for creating more data).
+ * made to be 2 times the input size (to account for creating more data).
  *
  * This program also handles any additional channels that the pipeline
  * on the PL fabric might depend on. It starts up DMA transfers for these
@@ -35,14 +35,8 @@
 
 #include "util.h"               // Miscellaneous utilities
 #include "byte_conversion.h"    // Convert bytes to MBs
+#include "dma_util.h"           // DMA helper functions
 #include "libaxidma.h"          // Interface ot the AXI DMA library
-
-/*----------------------------------------------------------------------------
- * Global Definitions
- *----------------------------------------------------------------------------*/
-
-// We scale all output buffers by 2 of the input size, to ensure no overflow
-#define BUF_SCALE   2
 
 /*----------------------------------------------------------------------------
  * Command Line Interface
@@ -194,89 +188,6 @@ static int parse_args(int argc, char **argv, char **input_path,
 /*----------------------------------------------------------------------------
  * DMA File Transfer Functions
  *----------------------------------------------------------------------------*/
-
-static int do_remainder_transactions(axidma_dev_t dev, int input_channel,
-        int output_channel, int *chans, int num_chans, int input_size,
-        enum axidma_dir dir, void ***bufs)
-{
-    int rc;
-    int i;
-    int buf_size;
-    void **buffers;
-
-    // Allocate an array to store the buffers for all of the transactions
-    buffers = malloc(num_chans * sizeof(*buffers));
-    if (buffers == NULL) {
-        return -ENOMEM;
-    }
-    memset(buffers, 0, num_chans * sizeof(*buffers));
-
-    /* For any remainder channels, start the transactions in case the Tx/Rx
-     * pipline has dependencies on them. */
-    buf_size = input_size * BUF_SCALE;
-    rc = 0;
-    for (i = 0; i < num_chans; i++)
-    {
-        // If the channel is either the input or output one, we skip it
-        if (chans[i] == input_channel || chans[i] == output_channel) {
-            continue;
-        }
-
-        buffers[i] = axidma_malloc(dev, buf_size);
-        if (buffers[i] == NULL) {
-            fprintf(stderr, "Unable to allocate buffer for remainder "
-                    "transaction.\n");
-            rc = -ENOMEM;
-            break;
-        }
-        rc = axidma_oneway_transfer(dev, dir, chans[i], buffers[i], buf_size,
-                                    false);
-        if (rc < 0) {
-            axidma_free(dev, buffers[i], buf_size);
-            buffers[i] = NULL;
-            printf("Warning: Unable to start transaction on channel %d.\n",
-                   chans[i]);
-        }
-    }
-
-    *bufs = buffers;
-    return rc;
-}
-
-static void stop_remainder_transactions(axidma_dev_t dev, int input_channel,
-        int output_channel, int *chans, int num_chans, int input_size,
-        enum axidma_dir dir, void **bufs)
-{
-    int i;
-    int buf_size;
-
-    if (num_chans == 0) {
-        return;
-    }
-
-    // Stop the all the remainder transactions, and free their buffers
-    buf_size = input_size * BUF_SCALE;
-    for (i = 0; i < num_chans; i++)
-    {
-        // If a buffer is NULL, then we stopped early in do_remainder_trans
-        if (bufs[i] == NULL) {
-            break;
-        }
-
-        // If the channel is either the input or output one, we skip it
-        if (chans[i] == input_channel || chans[i] == output_channel) {
-            continue;
-        }
-
-        axidma_stop_transfer(dev, chans[i], dir);
-        axidma_free(dev, bufs[i], buf_size);
-    }
-
-    // Free the buffer array
-    free(bufs);
-    return;
-
-}
 
 static int do_transfer(axidma_dev_t dev, int input_channel, void *input_buf,
         int input_size, int output_channel, void *output_buf, int output_size,
