@@ -39,6 +39,22 @@
 #include "libaxidma.h"          // Interface ot the AXI DMA library
 
 /*----------------------------------------------------------------------------
+ * Internal Definitions
+ *----------------------------------------------------------------------------*/
+
+// A convenient structure to carry information around about the transfer
+struct dma_transfer {
+    int input_fd;           // The file descriptor for the input file
+    int input_channel;      // The channel used to send the data
+    int input_size;         // The amount of data to send
+    void *input_buf;        // The buffer to hold the input data
+    int output_fd;          // The file descriptor for the output file
+    int output_channel;     // The channel used to receive the data
+    int output_size;        // The amount of data to receive
+    void *output_buf;       // The buffer to hold the output
+};
+
+/*----------------------------------------------------------------------------
  * Command Line Interface
  *----------------------------------------------------------------------------*/
 
@@ -66,8 +82,8 @@ static void print_usage(bool help)
             "use the lowest numbered channel available.\n");
     fprintf(stream, "\t-s <Output file size>:\tThe size of the output file in "
             "bytes. This is an integer value that must be at least the number "
-            "of bytes received back. By default, this is 10 times the size of "
-            "the input file.\n");
+            "of bytes received back. By default, this is the same as the size "
+            "of the input file.\n");
     fprintf(stream, "\t-o <Output file size>:\tThe size of the output file in "
             "Mbs. This is a floating-point value that must be at least the "
             "number of bytes received back. By default, this is the same "
@@ -78,7 +94,7 @@ static void print_usage(bool help)
 /* Parses the command line arguments overriding the default transfer sizes,
  * and number of transfer to use for the benchmark if specified. */
 static int parse_args(int argc, char **argv, char **input_path,
-    char **output_path, int *tx_channel, int *rx_channel, int *output_size)
+    char **output_path, int *input_channel, int *output_channel, int *output_size)
 {
     char option;
     int int_arg;
@@ -87,8 +103,8 @@ static int parse_args(int argc, char **argv, char **input_path,
     int rc;
 
     // Set the default values for the arguments
-    *tx_channel = -1;
-    *rx_channel = -1;
+    *input_channel = -1;
+    *output_channel = -1;
     *output_size = -1;
     o_specified = false;
     s_specified = false;
@@ -105,7 +121,7 @@ static int parse_args(int argc, char **argv, char **input_path,
                     print_usage(false);
                     return rc;
                 }
-                *tx_channel = int_arg;
+                *input_channel = int_arg;
                 break;
 
             // Parse the receive channel device id
@@ -115,7 +131,7 @@ static int parse_args(int argc, char **argv, char **input_path,
                     print_usage(false);
                     return rc;
                 }
-                *rx_channel = int_arg;
+                *output_channel = int_arg;
                 break;
 
             // Parse the output file size (in bytes)
@@ -151,7 +167,7 @@ static int parse_args(int argc, char **argv, char **input_path,
     }
 
     // If one of -t or -r is specified, then both must be
-    if ((*tx_channel == -1) ^ (*rx_channel == -1)) {
+    if ((*input_channel == -1) ^ (*output_channel == -1)) {
         fprintf(stderr, "Error: Either both -t and -r must be specified, or "
                 "neither.\n");
         print_usage(false);
@@ -189,109 +205,68 @@ static int parse_args(int argc, char **argv, char **input_path,
  * DMA File Transfer Functions
  *----------------------------------------------------------------------------*/
 
-static int do_transfer(axidma_dev_t dev, int input_channel, void *input_buf,
-        int input_size, int output_channel, void *output_buf, int output_size,
-        int *tx_chans, int num_tx, int *rx_chans, int num_rx)
+static int do_transfer(axidma_dev_t dev, struct dma_transfer *trans)
 {
     int rc;
-    void **tx_bufs, **rx_bufs;
 
     /* Start all the remainder Tx and Rx transaction in case the main
      * transaction has any dependencies with them. */
-    rc = do_remainder_transactions(dev, input_channel, output_channel, tx_chans,
-            num_tx, input_size, AXIDMA_WRITE, &tx_bufs);
-    if (rc < 0) {
-        goto stop_rem_tx;
-    }
-    rc = do_remainder_transactions(dev, input_channel, output_channel, rx_chans,
-            num_rx, input_size, AXIDMA_READ, &rx_bufs);
-    if (rc < 0) {
-        goto stop_rem_rx;
-    }
+    start_remainder_transactions(dev, trans->input_channel,
+                                 trans->output_channel, trans->input_size);
 
     // Perform the main transaction
-    rc = axidma_twoway_transfer(dev, input_channel, input_buf, input_size,
-           output_channel, output_buf, output_size, true);
+    rc = axidma_twoway_transfer(dev, trans->input_channel, trans->input_buf,
+            trans->input_size, trans->output_channel, trans->output_buf,
+            trans->output_size, true);
     if (rc < 0) {
         fprintf(stderr, "DMA read write transaction failed.\n");
     }
 
     // Stop the remainder transactions, and free their memory
-stop_rem_rx:
-    stop_remainder_transactions(dev, input_channel, output_channel, rx_chans,
-            num_rx, input_size, AXIDMA_READ, rx_bufs);
-stop_rem_tx:
-    stop_remainder_transactions(dev, input_channel, output_channel,
-            tx_chans, num_tx, input_size, AXIDMA_WRITE, tx_bufs);
+    stop_remainder_transactions(dev, trans->input_channel,
+                                trans->output_channel, trans->input_size);
     return rc;
 }
-
-static int transfer_file(axidma_dev_t dev, int input_fd, int input_channel,
-        int input_size, int output_fd, int output_channel, int output_size,
-        char *output_path)
+static int transfer_file(axidma_dev_t dev, struct dma_transfer *trans,
+                         char *output_path)
 {
     int rc;
-    void *input_buf, *output_buf;
-    int *tx_chans, *rx_chans;
-    int num_tx, num_rx;
 
     // Allocate a buffer for the input file, and read it into the buffer
-    input_buf = axidma_malloc(dev, input_size);
-    if (input_buf == NULL) {
+    trans->input_buf = axidma_malloc(dev, trans->input_size);
+    if (trans->input_buf == NULL) {
         fprintf(stderr, "Failed to allocate the input buffer.\n");
         rc = -ENOMEM;
         goto ret;
     }
-    rc = robust_read(input_fd, input_buf, input_size);
+    rc = robust_read(trans->input_fd, trans->input_buf, trans->input_size);
     if (rc < 0) {
         perror("Unable to read in input buffer.\n");
-        axidma_free(dev, input_buf, input_size);
+        axidma_free(dev, trans->input_buf, trans->input_size);
         return rc;
     }
 
     // Allocate a buffer for the output file
-    output_buf = axidma_malloc(dev, output_size);
-    if (output_buf == NULL) {
+    trans->output_buf = axidma_malloc(dev, trans->output_size);
+    if (trans->output_buf == NULL) {
         rc = -ENOMEM;
         goto free_input_buf;
     }
 
-    // Find the transmit, receive, and display channels
-    tx_chans = axidma_get_dma_tx(dev, &num_tx);
-    if (num_tx < 1) {
-        fprintf(stderr, "Error: No transmit channels were found.\n");
-        rc = -ENODEV;
-        goto free_output_buf;
-    }
-    rx_chans = axidma_get_dma_rx(dev, &num_rx);
-    if (num_rx < 1) {
-        fprintf(stderr, "Error: No receive channels were found.\n");
-        rc = -ENODEV;
-        goto free_output_buf;
-    }
-
-    /* If the user didn't specify the channels, we assume that the transmit and
-     * receive channels are the lowest numbered ones. */
-    if (input_channel == -1 && output_channel == -1) {
-        input_channel = tx_chans[0];
-        output_channel = rx_chans[0];
-    }
-
     // Perform the transfer
-    rc = do_transfer(dev, input_channel, input_buf, input_size, output_channel,
-            output_buf, output_size, tx_chans, num_tx, rx_chans, num_rx);
+    rc = do_transfer(dev, trans);
     if (rc < 0) {
         goto free_output_buf;
     }
 
     // Write the data to the output file
     printf("Writing output data to `%s`.\n", output_path);
-    rc = robust_write(output_fd, output_buf, output_size);
+    rc = robust_write(trans->output_fd, trans->output_buf, trans->output_size);
 
 free_output_buf:
-    axidma_free(dev, output_buf, output_size);
+    axidma_free(dev, trans->output_buf, trans->output_size);
 free_input_buf:
-    axidma_free(dev, input_buf, input_size);
+    axidma_free(dev, trans->input_buf, trans->input_size);
 ret:
     return rc;
 }
@@ -304,28 +279,30 @@ int main(int argc, char **argv)
 {
     int rc;
     char *input_path, *output_path;
-    int input_channel, output_channel;
-    int input_size, output_size;
-    int input_fd, output_fd;
+    int num_tx, num_rx;
+    int *tx_chans, *rx_chans;
     axidma_dev_t axidma_dev;
     struct stat input_stat;
+    struct dma_transfer trans;
 
-    if (parse_args(argc, argv, &input_path, &output_path, &input_channel,
-                   &output_channel, &output_size) < 0) {
+    // Parse the input arguments
+    memset(&trans, 0, sizeof(trans));
+    if (parse_args(argc, argv, &input_path, &output_path, &trans.input_channel,
+                   &trans.output_channel, &trans.output_size) < 0) {
         rc = 1;
         goto ret;
     }
 
     // Try opening the input and output images
-    input_fd = open(input_path, O_RDONLY);
-    if (input_fd < 0) {
+    trans.input_fd = open(input_path, O_RDONLY);
+    if (trans.input_fd < 0) {
         perror("Error opening input file");
         rc = 1;
         goto ret;
     }
-    output_fd = open(output_path, O_WRONLY|O_CREAT|O_TRUNC,
+    trans.output_fd = open(output_path, O_WRONLY|O_CREAT|O_TRUNC,
                      S_IWUSR|S_IRUSR|S_IRGRP|S_IWGRP|S_IROTH);
-    if (output_fd < 0) {
+    if (trans.output_fd < 0) {
         perror("Error opening output file");
         rc = -1;
         goto close_input;
@@ -340,29 +317,51 @@ int main(int argc, char **argv)
     }
 
     // Get the size of the input file
-    if (fstat(input_fd, &input_stat) < 0) {
+    if (fstat(trans.input_fd, &input_stat) < 0) {
         perror("Unable to get file statistics");
         rc = 1;
         goto destroy_axidma;
     }
 
     // If the output size was not specified by the user, set it to the default
-    input_size = input_stat.st_size;
-    if (output_size == -1) {
-        output_size = input_size;
+    trans.input_size = input_stat.st_size;
+    if (trans.output_size == -1) {
+        trans.output_size = trans.input_size;
     }
 
+    // Get the tx and rx channels if they're not already specified
+    tx_chans = axidma_get_dma_tx(axidma_dev, &num_tx);
+    if (num_tx < 1) {
+        fprintf(stderr, "Error: No transmit channels were found.\n");
+        rc = -ENODEV;
+        goto destroy_axidma;
+    }
+    rx_chans = axidma_get_dma_rx(axidma_dev, &num_rx);
+    if (num_rx < 1) {
+        fprintf(stderr, "Error: No receive channels were found.\n");
+        rc = -ENODEV;
+        goto destroy_axidma;
+    }
+
+    /* If the user didn't specify the channels, we assume that the transmit and
+     * receive channels are the lowest numbered ones. */
+    if (trans.input_channel == -1 && trans.output_channel == -1) {
+        trans.input_channel = tx_chans[0];
+        trans.output_channel = rx_chans[0];
+    }
+    printf("Transmit Channel: %d, Receive Channel: %d.\n", trans.input_channel,
+           trans.output_channel);
+
     // Transfer the file over the AXI DMA
-    rc = transfer_file(axidma_dev, input_fd, input_channel, input_size,
-            output_fd, output_channel, output_size, output_path);
+    rc = transfer_file(axidma_dev, &trans, output_path);
     rc = (rc < 0) ? 1 : 0;
 
 destroy_axidma:
     axidma_destroy(axidma_dev);
 close_output:
-    assert(close(output_fd) == 0);
+    assert(close(trans.output_fd) == 0);
 close_input:
-    assert(close(input_fd) == 0);
+    assert(close(trans.input_fd) == 0);
 ret:
     return rc;
 }
