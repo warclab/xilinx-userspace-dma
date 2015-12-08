@@ -136,20 +136,20 @@ static int axidma_init_sg_entry(struct scatterlist *sg_list, int index,
 static struct axidma_chan *axidma_get_chan(struct axidma_device *dev,
     int chan_id, enum axidma_type chan_type, enum axidma_dir chan_dir)
 {
-    int i;
     struct axidma_chan *chan;
 
-    // Search for an array entry with a matching device id
-    for (i = 0; i < dev->num_chans; i++)
-    {
-        chan = &dev->channels[i];
-        if (chan->type == chan_type && chan->dir == chan_dir &&
-            chan->channel_id == chan_id) {
-            return chan;
-        }
+    // Check that the channel id is in range
+    if (chan_id < 0 || chan_id >= dev->num_chans) {
+        return NULL;
     }
 
-    return NULL;
+    // Verify that the channel is of the proper type
+    chan = &dev->channels[chan_id];
+    if (chan->type != chan_type || chan->dir != chan_dir) {
+        return NULL;
+    }
+
+    return chan;
 }
 
 static void axidma_setup_dma_config(struct xilinx_dma_config *dma_config,
@@ -625,7 +625,7 @@ static void axidma_probe_chan(struct axidma_device *dev, int channel_id,
     } else if (chan != NULL) {
         dev->channels[dev->num_chans].dir = channel_dir;
         dev->channels[dev->num_chans].type = channel_type;
-        dev->channels[dev->num_chans].channel_id = channel_id;
+        dev->channels[dev->num_chans].channel_id = dev->num_chans;
         dev->channels[dev->num_chans].chan = chan;
         dev->num_chans += 1;
         *num_type_chans += 1;

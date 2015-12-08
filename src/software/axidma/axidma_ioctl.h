@@ -134,7 +134,7 @@ struct axidma_video_transaction {
  *  - An array of structures with the following fields:
  *       - dir - The direction of the channel (either read or write).
  *       - type - The type of the channel (either normal DMA or video DMA).
- *       - channel_id - The (not necessarily unqiue) integer id for the channel.
+ *       - channel_id - The integer id for the channel.
  *       - chan - This field has no meaning and can be safely ignored.
  **/
 #define AXIDMA_GET_DMA_CHANNELS         _IOR(AXIDMA_IOCTL_MAGIC, 1, \
@@ -245,7 +245,7 @@ struct axidma_video_transaction {
  * Inputs:
  *  - dir - The direction of the channel (either read or write).
  *  - type - The type of the channel (either normal DMA or video DMA).
- *  - channel_id - The (not necessarily unqiue) integer id for the channel.
+ *  - channel_id - The integer id for the channel.
  *  - chan - This field is unused an can be safely left uninitialized.
  */
 #define AXIDMA_STOP_DMA_CHANNEL         _IOR(AXIDMA_IOCTL_MAGIC, 6, \
