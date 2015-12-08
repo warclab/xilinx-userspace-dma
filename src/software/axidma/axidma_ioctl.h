@@ -97,6 +97,9 @@ struct axidma_video_transaction {
 // The magic number used to distinguish IOCTL's for our device
 #define AXIDMA_IOCTL_MAGIC              'W'
 
+// The number of IOCTL's implemented, used for verification
+#define AXIDMA_NUM_IOCTLS               8
+
 /**
  * Returns the number of available DMA channels in the system.
  *
@@ -141,6 +144,27 @@ struct axidma_video_transaction {
                                              struct axidma_channel_info)
 
 /**
+ * Register the given signal to be sent when DMA transactions complete.
+ *
+ * This function sets up an asynchronous signal to be delivered to the invoking
+ * process any DMA subsystem completes a transaction. If the user dispatches
+ * an asynchronous transaction, and wants to know when it completes, they must
+ * register a signal to be delivered.
+ *
+ * The signal must be one of the POSIX real time signals. So, it must be
+ * between the signals SIGRTMIN and SIGRTMAX. The kernel will deliver the
+ * channel id back to the userspace signal handler.
+ *
+ * This can be used to have a user callback function, effectively emulating an
+ * interrupt in userspace. The user must register their signal handler for
+ * the specified signal for this to happen.
+ *
+ * Inputs:
+ *  - signal - The signal to send upon transaction completion.
+ **/
+#define AXIDMA_SET_DMA_SIGNAL           _IO(AXIDMA_IOCTL_MAGIC, 2)
+
+/**
  * Receives the data from the logic fabric into the processing system.
  *
  * This function receives data from a device on the PL fabric through
@@ -158,7 +182,7 @@ struct axidma_video_transaction {
  *  - buf - The address of the buffer you want to receive the data in.
  *  - buf_len - The number of bytes to receive.
  **/
-#define AXIDMA_DMA_READ                 _IOR(AXIDMA_IOCTL_MAGIC, 2, \
+#define AXIDMA_DMA_READ                 _IOR(AXIDMA_IOCTL_MAGIC, 3, \
                                              struct axidma_transaction)
 
 /**
@@ -179,7 +203,7 @@ struct axidma_video_transaction {
  *  - buf - The address of the data you want to send.
  *  - buf_len - The number of bytes to send.
  **/
-#define AXIDMA_DMA_WRITE                _IOR(AXIDMA_IOCTL_MAGIC, 3, \
+#define AXIDMA_DMA_WRITE                _IOR(AXIDMA_IOCTL_MAGIC, 4, \
                                              struct axidma_transaction)
 
 /**
@@ -204,7 +228,7 @@ struct axidma_video_transaction {
  *  - rx_buf - The address of the buffer you want to receive data in.
  *  - rx_buf_len - The number of bytes you want to receive.
  **/
-#define AXIDMA_DMA_READWRITE            _IOR(AXIDMA_IOCTL_MAGIC, 4, \
+#define AXIDMA_DMA_READWRITE            _IOR(AXIDMA_IOCTL_MAGIC, 5, \
                                              struct axidma_inout_transaction)
 
 /**
@@ -232,7 +256,7 @@ struct axidma_video_transaction {
  *  - height - The height of the frame in lines.
  *  - depth - The size of each pixel in the frame in bytes.
  **/
-#define AXIDMA_DMA_VIDEO_WRITE          _IOR(AXIDMA_IOCTL_MAGIC, 5, \
+#define AXIDMA_DMA_VIDEO_WRITE          _IOR(AXIDMA_IOCTL_MAGIC, 6, \
                                              struct axidma_video_transaction)
 
 /**
@@ -248,10 +272,7 @@ struct axidma_video_transaction {
  *  - channel_id - The integer id for the channel.
  *  - chan - This field is unused an can be safely left uninitialized.
  */
-#define AXIDMA_STOP_DMA_CHANNEL         _IOR(AXIDMA_IOCTL_MAGIC, 6, \
+#define AXIDMA_STOP_DMA_CHANNEL         _IOR(AXIDMA_IOCTL_MAGIC, 7, \
                                              struct axidma_chan)
-
-// The number of IOCTL's implemented, used for verification
-#define AXIDMA_NUM_IOCTLS               7
 
 #endif /* AXIDMA_IOCTL_H_ */

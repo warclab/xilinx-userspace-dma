@@ -279,6 +279,11 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             rc = 0;
             break;
 
+        case AXIDMA_SET_DMA_SIGNAL:
+            rc = axidma_set_signal(dev, arg);
+            break;
+
+
         case AXIDMA_DMA_READ:
             if (copy_from_user(&trans, arg_ptr, sizeof(trans)) != 0) {
                 axidma_err("Unable to copy transfer info from userspace for "

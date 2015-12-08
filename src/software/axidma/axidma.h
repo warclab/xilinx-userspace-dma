@@ -16,6 +16,7 @@
 #include <linux/kernel.h>           // Contains the definition for printk
 #include <linux/device.h>           // Definitions for class and device structs
 #include <linux/cdev.h>             // Definitions for character device structs
+#include <linux/signal.h>           // Definition of signal numbers
 
 #include <linux/dmaengine.h>        // Definitions for DMA structures and types
 #include <linux/amba/xilinx_dma.h>  // Xilinx DMA device ID's
@@ -41,14 +42,17 @@
     printk(KERN_ERR MODULE_NAME ": %s: %d: " fmt, __FILENAME__, __LINE__, \
            ## __VA_ARGS__)
 
+// Forward declaration of the callback data structure for DMA
+struct axidma_cb_data;
+
 // All of the meta-data needed for an axidma device
 struct axidma_device {
     int num_devices;                // The number of devices
     unsigned int minor_num;         // The minor number of the device
     dev_t dev_num;                  // The device number of the device
     char *chrdev_name;              // The name of the character device
-    struct device *device;          // Device structure for the character device
-    struct class *dev_class;        // The device class for the character device
+    struct device *device;          // Device structure for the char device
+    struct class *dev_class;        // The device class for the chardevice
     struct cdev chrdev;             // The character device structure
 
     int num_dma_tx_chans;           // The number of transmit DMA channels
@@ -56,6 +60,8 @@ struct axidma_device {
     int num_vdma_tx_chans;          // The number of transmit VDMA channels
     int num_vdma_rx_chans;          // The number of receive  VDMA channels
     int num_chans;                  // The total number of DMA channels
+    int notify_signal;              // Signal used to notify transfer completion
+    struct axidma_cb_data *cb_data; // The callback data for each channel
     struct axidma_chan *channels;   // All available channels
 };
 
@@ -78,6 +84,10 @@ void axidma_chrdev_exit(struct axidma_device *dev);
  * DMA Device Definitions
  *----------------------------------------------------------------------------*/
 
+// Checks that the given integer is a valid notification signal for DMA
+#define VALID_NOTIFY_SIGNAL(signal) \
+    (SIGRTMIN <= (signal) && (signal) <= SIGRTMAX)
+
 // Packs the device id into a DMA match structure, to match DMA devices
 #define PACK_DMA_MATCH(channel_id, type, direction) \
     (((direction) & 0xFF) | (type) | \
@@ -93,6 +103,7 @@ void axidma_get_num_channels(struct axidma_device *dev,
                              struct axidma_num_channels *num_chans);
 void axidma_get_channel_info(struct axidma_device *dev,
                              struct axidma_channel_info *chan_info);
+int axidma_set_signal(struct axidma_device *dev, int signal);
 int axidma_read_transfer(struct axidma_device *dev,
                           struct axidma_transaction *trans);
 int axidma_write_transfer(struct axidma_device *dev,

@@ -14,7 +14,7 @@
 #include <linux/wait.h>             // Completion related functions
 #include <linux/dmaengine.h>        // DMA types and functions
 #include <linux/slab.h>             // Allocation functions (ioremap)
-#include <linux/amba/xilinx_dma.h>  // Xilinx DMA config structure
+#include <linux/amba/xilinx_dma.h>  // Xilinx DMA config structures
 #include <linux/errno.h>            // Linux error codes
 
 // Local dependencies
@@ -33,25 +33,37 @@
 
 // A convenient structure to pass between prep and start transfer functions
 struct axidma_transfer {
-    int sg_len;                         // The length of the BD array
-    struct scatterlist *sg_list;        // List of buffer descriptors
-    bool wait;                          // Indicates if we should wait
-    dma_cookie_t cookie;                // The DMA cookie for the transfer
-    struct completion comp;             // A completion to use for waiting
-    enum axidma_dir dir;                // The direction of the transfer
-    enum axidma_type type;              // The type of the transfer (VDMA/DMA)
+    int sg_len;                     // The length of the BD array
+    struct scatterlist *sg_list;    // List of buffer descriptors
+    bool wait;                      // Indicates if we should wait
+    dma_cookie_t cookie;            // The DMA cookie for the transfer
+    struct completion comp;         // A completion to use for waiting
+    enum axidma_dir dir;            // The direction of the transfer
+    enum axidma_type type;          // The type of the transfer (VDMA/DMA)
+    int channel_id;                 // The ID of the channel
+    int notify_signal;              // The signal to use for async transfers
+    struct task_struct *process;    // The process requesting the transfer
+    struct axidma_cb_data *cb_data; // The callback data struct
 
     // DMA and VDMA specific fields
     union {
         struct {
-            bool cyclic_bd;             // Cyclic BD's, for continous trasfers
+            bool cyclic_bd;         // Cyclic BD's, for continous trasfers
         } dma_tfr;
         struct {
-            int width;                  // Width of the image in pixels
-            int height;                 // Height of the image in lines
-            int depth;                  // Size of each pixel in bytes
+            int width;              // Width of the image in pixels
+            int height;             // Height of the image in lines
+            int depth;              // Size of each pixel in bytes
         } vdma_tfr;
     };
+};
+
+// The data to pass to the DMA transfer completion callback function
+struct axidma_cb_data {
+    int channel_id;                 // The id of the channel used
+    int notify_signal;              // For async, signal to send
+    struct task_struct *process;    // The process to send the signal to
+    struct completion *comp;        // For sync, the notification to kernel
 };
 
 /*----------------------------------------------------------------------------
@@ -182,10 +194,22 @@ static void axidma_setup_vdma_config(struct xilinx_vdma_config *dma_config,
     return;
 }
 
-static void axidma_dma_completion(void *completion)
+static void axidma_dma_callback(void *data)
 {
-    if (completion != NULL) {
-        complete(completion);
+    struct axidma_cb_data *cb_data;
+    struct siginfo sig_info;
+
+    /* For synchronous transfers, notify the kernel thread waiting. For
+     * asynchronous transfers, send a signal to userspace if requested. */
+    cb_data = data;
+    if (cb_data->comp != NULL) {
+        complete(cb_data->comp);
+    } else if (VALID_NOTIFY_SIGNAL(cb_data->notify_signal)) {
+        memset(&sig_info, 0, sizeof(sig_info));
+        sig_info.si_signo = cb_data->notify_signal;
+        sig_info.si_code = SI_QUEUE;
+        sig_info.si_int = cb_data->channel_id;
+        send_sig_info(cb_data->notify_signal, &sig_info, cb_data->process);
     }
 }
 
@@ -198,6 +222,7 @@ static int axidma_prep_transfer(struct axidma_chan *axidma_chan,
     struct completion *dma_comp;
     struct xilinx_vdma_config vdma_config;
     struct xilinx_dma_config dma_config;
+    struct axidma_cb_data *cb_data;
     void *config;
     enum dma_transfer_direction dma_dir;
     enum dma_ctrl_flags dma_flags;
@@ -216,6 +241,7 @@ static int axidma_prep_transfer(struct axidma_chan *axidma_chan,
     sg_len = dma_tfr->sg_len;
     direction = axidma_dir_to_string(dma_tfr->dir);
     type = axidma_type_to_string(dma_tfr->type);
+    cb_data = dma_tfr->cb_data;
 
     // Configure the channel appropiately based on whether it's DMA or VDMA
     if (dma_tfr->type == AXIDMA_DMA) {
@@ -248,13 +274,20 @@ static int axidma_prep_transfer(struct axidma_chan *axidma_chan,
 
     /* If we're going to wait for this channel, initialize the completion for
      * the channel, and setup the callback to complete it. */
+    cb_data->channel_id = dma_tfr->channel_id;
     if (dma_tfr->wait) {
-        init_completion(dma_comp);
-        dma_txnd->callback_param = dma_comp;
-        dma_txnd->callback = axidma_dma_completion;
+        cb_data->comp = dma_comp;
+        cb_data->notify_signal = -1;
+        cb_data->process = NULL;
+        init_completion(cb_data->comp);
+        dma_txnd->callback_param = cb_data;
+        dma_txnd->callback = axidma_dma_callback;
     } else {
-        dma_txnd->callback_param = NULL;
-        dma_txnd->callback = NULL;
+        cb_data->comp = NULL;
+        cb_data->notify_signal = dma_tfr->notify_signal;
+        cb_data->process = dma_tfr->process;
+        dma_txnd->callback_param = cb_data;
+        dma_txnd->callback = axidma_dma_callback;
     }
     dma_cookie = dma_txnd->tx_submit(dma_txnd);
     if (dma_submit_error(dma_cookie)) {
@@ -339,6 +372,20 @@ void axidma_get_channel_info(struct axidma_device *dev,
     return;
 }
 
+int axidma_set_signal(struct axidma_device *dev, int signal)
+{
+    // Verify the signal is a real-time one
+    if (!VALID_NOTIFY_SIGNAL(signal)) {
+        axidma_err("Invalid signal %d requested for DMA notification.\n",
+                   signal);
+        axidma_err("You must specify one of the POSIX real-time signals.\n");
+        return -EINVAL;
+    }
+
+    dev->notify_signal = signal;
+    return 0;
+}
+
 int axidma_read_transfer(struct axidma_device *dev,
                          struct axidma_transaction *trans)
 {
@@ -354,6 +401,9 @@ int axidma_read_transfer(struct axidma_device *dev,
         .type = AXIDMA_DMA,
         .wait = trans->wait,
         .dma_tfr.cyclic_bd = false,
+        .channel_id = trans->channel_id,
+        .notify_signal = dev->notify_signal,
+        .process = get_current(),
     };
 
     // Setup the scatter-gather list for the transfer (only one entry)
@@ -370,6 +420,7 @@ int axidma_read_transfer(struct axidma_device *dev,
                    trans->channel_id);
         return -ENODEV;
     }
+    rx_tfr.cb_data = &dev->cb_data[trans->channel_id];
 
     // Prepare the receive transfer
     rc = axidma_prep_transfer(rx_chan, &rx_tfr);
@@ -401,6 +452,9 @@ int axidma_write_transfer(struct axidma_device *dev,
         .type = AXIDMA_DMA,
         .wait = trans->wait,
         .dma_tfr.cyclic_bd = false,
+        .channel_id = trans->channel_id,
+        .notify_signal = dev->notify_signal,
+        .process = get_current(),
     };
 
     // Setup the scatter-gather list for the transfer (only one entry)
@@ -417,6 +471,7 @@ int axidma_write_transfer(struct axidma_device *dev,
                    trans->channel_id);
         return -ENODEV;
     }
+    tx_tfr.cb_data = &dev->cb_data[trans->channel_id];
 
     // Prepare the transmit transfer
     rc = axidma_prep_transfer(tx_chan, &tx_tfr);
@@ -450,6 +505,9 @@ int axidma_rw_transfer(struct axidma_device *dev,
         .type = AXIDMA_DMA,
         .wait = false,
         .dma_tfr.cyclic_bd = false,
+        .channel_id = trans->tx_channel_id,
+        .notify_signal = dev->notify_signal,
+        .process = get_current(),
     };
     struct axidma_transfer rx_tfr = {
         .sg_list = &rx_sg_list,
@@ -458,6 +516,9 @@ int axidma_rw_transfer(struct axidma_device *dev,
         .type = AXIDMA_DMA,
         .wait = trans->wait,
         .dma_tfr.cyclic_bd = false,
+        .channel_id = trans->rx_channel_id,
+        .notify_signal = dev->notify_signal,
+        .process = get_current(),
     };
 
     // Setup the scatter-gather list for the transfers (only one entry)
@@ -482,6 +543,8 @@ int axidma_rw_transfer(struct axidma_device *dev,
                    trans->tx_channel_id);
         return -ENODEV;
     }
+    tx_tfr.cb_data = &dev->cb_data[trans->tx_channel_id];
+
     rx_chan = axidma_get_chan(dev, trans->rx_channel_id, AXIDMA_DMA,
                               AXIDMA_READ);
     if (rx_chan == NULL) {
@@ -489,6 +552,7 @@ int axidma_rw_transfer(struct axidma_device *dev,
                    trans->rx_channel_id);
         return -ENODEV;
     }
+    rx_tfr.cb_data = &dev->cb_data[trans->rx_channel_id];
 
     // Prep both the receive and transmit transfers
     rc = axidma_prep_transfer(tx_chan, &tx_tfr);
@@ -528,6 +592,9 @@ int axidma_video_write_transfer(struct axidma_device *dev,
         .type = AXIDMA_DMA,
         .wait = false,
         .dma_tfr.cyclic_bd = true,
+        .channel_id = trans->channel_id,
+        .notify_signal = dev->notify_signal,
+        .process = get_current(),
     };
 
     // Allocate an array to store the scatter list structures for the buffers
@@ -558,6 +625,7 @@ int axidma_video_write_transfer(struct axidma_device *dev,
         rc = -ENODEV;
         goto free_sg_list;
     }
+    tx_tfr.cb_data = &dev->cb_data[trans->channel_id];
 
     // Prepare the transmit transfer
     rc = axidma_prep_transfer(tx_chan, &tx_tfr);
@@ -686,9 +754,18 @@ int axidma_dma_init(struct axidma_device *dev)
     }
 
     // Allocate an array to store all channel metadata structures
-    dev->channels= kmalloc(dev->num_chans*sizeof(dev->channels[0]), GFP_KERNEL);
+    dev->channels = kmalloc(dev->num_chans*sizeof(dev->channels[0]),
+                            GFP_KERNEL);
     if (dev->channels == NULL) {
         axidma_err("Unable to allocate memory for channel structures.\n");
+        return -ENOMEM;
+    }
+
+    // Allocate an array to store all the callback data structures
+    dev->cb_data = kmalloc(dev->num_chans*sizeof(dev->cb_data[0]), GFP_KERNEL);
+    if (dev->cb_data == NULL) {
+        axidma_err("Unable to allocate memory for channel callback "
+                   "structures.\n");
         return -ENOMEM;
     }
 
@@ -716,8 +793,9 @@ void axidma_dma_exit(struct axidma_device *dev)
         dma_release_channel(chan);
     }
 
-    // Free the channel array
+    // Free the channel and callback data arrays
     kfree(dev->channels);
+    kfree(dev->cb_data);
 
     return;
 }
