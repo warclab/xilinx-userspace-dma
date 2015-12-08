@@ -20,6 +20,9 @@
 struct axidma_dev;
 typedef struct axidma_dev* axidma_dev_t;
 
+// The type of a callback function for AXI DMA transfer completion
+typedef void (*axidma_cb_t)(int channel_id, void *data);
+
 // Function prototypes for the interface
 struct axidma_dev *axidma_init();
 void axidma_destroy(axidma_dev_t dev);
