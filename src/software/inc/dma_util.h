@@ -14,13 +14,15 @@
 
 #include "libaxidma.h"
 
-/* We scale all output buffers by 3 of the input size, to ensure no overflow.
+/* We scale all output buffers by 5 of the input size, to ensure no overflow.
  * This is in case the transactions require larger sizes. */
-#define BUF_SCALE   3
+#define BUF_SCALE   5
 
 // Function prototypes
 int start_remainder_transactions(axidma_dev_t dev, int tx_channel,
                                  int rx_channel, int tx_size);
+int dispatch_remainder_transactions(axidma_dev_t dev, int tx_channel,
+                                    int rx_channel, int tx_size);
 void stop_remainder_transactions(axidma_dev_t dev, int tx_channel,
                                  int rx_channel, int tx_size);
 

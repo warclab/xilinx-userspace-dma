@@ -36,7 +36,14 @@
 #include <getopt.h>             // Option parsing
 #include <errno.h>              // Error codes
 
-#include "axidma_ioctl.h"       // The AXI DMA IOCTL interface
+#include "libaxidma.h"          // Interface to the AXI DMA
+#include "util.h"               // Miscellaneous utilities
+#include "dma_util.h"           // DMA Utilities
+#include "conversion.h"         // Miscellaneous conversion utilities
+
+/*----------------------------------------------------------------------------
+ * Internal Definitons
+ *----------------------------------------------------------------------------*/
 
 // The size of data to send per transfer (1080p image, 7.24 MB)
 #define IMAGE_SIZE                  (1920 * 1080)
@@ -48,13 +55,11 @@
 // The pattern that we fill into the buffers
 #define TEST_PATTERN(i) ((int)(0x1234ACDE ^ (i)))
 
-// Macros to convert integer bytes to double Mb, and vice verse
-#define BYTE_TO_MB(size) (((double)(size)) / (1024.0 * 1024.0))
-#define MB_TO_BYTE(size) ((size_t)((size) * 1024.0 * 1024.0))
+// The DMA context passed to the helper thread, who handles remainder channels
 
-// Converts a tval struct to a double value of the time in seconds
-#define TVAL_TO_SEC(tval) \
-    (((double)(tval).tv_sec) + (((double)(tval).tv_usec) / 1000000.0))
+/*----------------------------------------------------------------------------
+ * Command-line Interface
+ *----------------------------------------------------------------------------*/
 
 // Prints the usage for this program
 static void print_usage(bool help)
@@ -69,98 +74,109 @@ static void print_usage(bool help)
     }
 
     default_size = BYTE_TO_MB(DEFAULT_TRANSFER_SIZE);
-    fprintf(stream, "\t-r <receive transfer size (Mb)>:\tThe size of the data "
-            "to receive from the DMA on each transfer. Default is %0.2f Mb.\n",
+    fprintf(stream, "\t-t <DMA tx channel>:\t\t\tThe device id of the DMA "
+            "channel to use for transmitting the data to the PL fabric.\n");
+    fprintf(stream, "\t-r <DMA rx channel>:\t\t\tThe device id of the DMA "
+            "channel to use for receiving the the data from the PL fabric.\n");
+    fprintf(stream, "\t-i <transmit transfer size (MB)>:\tThe size of the data "
+            "transmit over the DMA on each transfer. Default is %0.2f MB.\n",
             default_size);
-    fprintf(stream, "\t-t <transmit transfer size (Mb)>:\tThe size of the data "
-            "transmit over the DMA on each transfer. Default is %0.2f Mb.\n",
+    fprintf(stream, "\t-b <transmit transfer size (bytes)>:\tThe size of the "
+            "data transmit over the DMA on each transfer. Default is %d "
+            "bytes.\n", DEFAULT_TRANSFER_SIZE);
+    fprintf(stream, "\t-o <receive transfer size (MB)>:\tThe size of the data "
+            "to receive from the DMA on each transfer. Default is %0.2f MB.\n",
             default_size);
-    fprintf(stream, "\t-d <transfer size (Mb)>:\t\tThis option sets the size "
-            "of both the data received and transmitted through DMA. Default "
-            "is %0.2f Mb.\n", default_size);
+    fprintf(stream, "\t-s <receive transfer size (bytes)>:\tThe size of the "
+            "data to receive from the DMA on each transfer. Default is %d "
+            "bytes.\n", DEFAULT_TRANSFER_SIZE);
     fprintf(stream, "\t-n <number transfers>:\t\t\tThe number of DMA transfers "
             "to perform to do the benchmark. Default is %d transfers.\n",
             DEFAULT_NUM_TRANSFERS);
     return;
 }
 
-// Parses the arg string as a double for the given option
-static int parse_double(char option, char *arg_str, double *data)
-{
-    int rc;
-
-    rc = sscanf(optarg, "%lf", data);
-    if (rc < 0) {
-        perror("Unable to parse argument");
-        return rc;
-    } else if (rc != 1) {
-        fprintf(stderr, "Error: Unable to parse argument '-%c %s' as a "
-                "double.\n", option, arg_str);
-        print_usage(false);
-        return -EINVAL;
-    }
-
-    return 0;
-}
-
 /* Parses the command line arguments overriding the default transfer sizes,
  * and number of transfer to use for the benchmark if specified. */
-static int parse_args(int argc, char **argv, size_t *tx_transfer_size,
-                      size_t *rx_transfer_size, int *num_transfers)
+static int parse_args(int argc, char **argv, int *tx_channel, int *rx_channel,
+        size_t *tx_size, size_t *rx_size, int *num_transfers)
 {
-    double transfer_size;
-    int transfers;
-    int rc;
+    double double_arg;
+    int int_arg;
     char option;
 
     // Set the default data size and number of transfers
-    *tx_transfer_size = DEFAULT_TRANSFER_SIZE;
-    *rx_transfer_size = DEFAULT_TRANSFER_SIZE;
+    *tx_channel = -1;
+    *rx_channel = -1;
+    *tx_size = DEFAULT_TRANSFER_SIZE;
+    *rx_size = DEFAULT_TRANSFER_SIZE;
     *num_transfers = DEFAULT_NUM_TRANSFERS;
 
-    while ((option = getopt(argc, argv, "hd:r:t:n:")) != (char)-1)
+    while ((option = getopt(argc, argv, "t:r:i:b:o:s:n:h")) != (char)-1)
     {
         switch (option)
         {
-            // Parse the transfer size argument, sets both tx and rx size
-            case 'd':
-                if (parse_double(option, optarg, &transfer_size) < 0) {
+            // Parse the transmit channel argument
+            case 't':
+                if (parse_int(option, optarg, &int_arg) < 0) {
+                    print_usage(false);
                     return -EINVAL;
                 }
-                // Convert the size to bytes
-                *tx_transfer_size = MB_TO_BYTE(transfer_size);
-                *rx_transfer_size = MB_TO_BYTE(transfer_size);
+                *tx_channel = int_arg;
                 break;
 
             // Parse the transmit transfer size argument
-            case 't':
-                if (parse_double(option, optarg, &transfer_size) < 0) {
+            case 'r':
+                if (parse_int(option, optarg, &int_arg) < 0) {
+                    print_usage(false);
                     return -EINVAL;
                 }
-                *tx_transfer_size = MB_TO_BYTE(transfer_size);
+                *rx_channel = int_arg;
+                break;
+
+            // Parse the transmit transfer size argument
+            case 'i':
+                if (parse_double(option, optarg, &double_arg) < 0) {
+                    print_usage(false);
+                    return -EINVAL;
+                }
+                *tx_size = MB_TO_BYTE(double_arg);
+                break;
+
+            // Parse the transmit transfer size argument
+            case 'b':
+                if (parse_int(option, optarg, &int_arg) < 0) {
+                    print_usage(false);
+                    return -EINVAL;
+                }
+                *tx_size = int_arg;
                 break;
 
             // Parse the receive transfer size argument
-            case 'r':
-                if (parse_double(option, optarg, &transfer_size) < 0) {
+            case 'o':
+                if (parse_double(option, optarg, &double_arg) < 0) {
+                    print_usage(false);
                     return -EINVAL;
                 }
-                *rx_transfer_size = MB_TO_BYTE(transfer_size);
+                *rx_size = MB_TO_BYTE(double_arg);
+                break;
+
+            // Parse the receive transfer size argument
+            case 's':
+                if (parse_int(option, optarg, &int_arg) < 0) {
+                    print_usage(false);
+                    return -EINVAL;
+                }
+                *rx_size = int_arg;
                 break;
 
             // Parse the number of transfers argument
             case 'n':
-                rc = sscanf(optarg, "%d", &transfers);
-                if (rc < 0) {
-                    perror("Unable to parse argument");
-                    return rc;
-                } else if (rc != 1) {
-                    fprintf(stderr, "Error: Unable to parse argument '-%c %s' "
-                            "as an integer.\n", option, optarg);
+                if (parse_int(option, optarg, &int_arg) < 0) {
                     print_usage(false);
                     return -EINVAL;
                 }
-                *num_transfers = transfers;
+                *num_transfers = int_arg;
                 break;
 
             // Print detailed usage message
@@ -174,75 +190,26 @@ static int parse_args(int argc, char **argv, size_t *tx_transfer_size,
         }
     }
 
+    if ((*tx_channel == -1) ^ (*rx_channel == -1)) {
+        fprintf(stderr, "Error: If one of -r/-t is specified, then both must "
+                "be.\n");
+        return -EINVAL;
+    }
+
+    if ((*tx_size == DEFAULT_TRANSFER_SIZE) ^
+        (*rx_size == DEFAULT_TRANSFER_SIZE)) {
+        fprintf(stderr, "Error: If one of -i/-b or -o/-s is specified, then "
+                "both most be.\n");
+        return -EINVAL;
+    }
+
+
     return 0;
 }
 
-// Finds the transmit and receive channels for the transaction
-static int find_dma_channels(int axidma_fd, int *tx_channel, int *rx_channel)
-{
-    int rc, i;
-    struct axidma_chan *channels, *chan;
-    struct axidma_num_channels num_chan;
-    struct axidma_channel_info channel_info;
-
-    // Find the number of channels and allocate a buffer to hold their data
-    rc = ioctl(axidma_fd, AXIDMA_GET_NUM_DMA_CHANNELS, &num_chan);
-    if (rc < 0) {
-        perror("Unable to get the number of DMA channels");
-        return rc;
-    } else if (num_chan.num_channels == 0) {
-        fprintf(stderr, "No DMA channels are present.\n");
-        return -ENODEV;
-    }
-
-    // Get the metdata about all the available channels
-    channels = malloc(num_chan.num_channels * sizeof(*channels));
-    if (channels == NULL) {
-        fprintf(stderr, "Unable to allocate channel information buffer.\n");
-        return -ENOMEM;
-    }
-    channel_info.channels = channels;
-    rc = ioctl(axidma_fd, AXIDMA_GET_DMA_CHANNELS, &channel_info);
-    if (rc < 0) {
-        perror("Unable to get DMA channel information");
-        free(channels);
-        return rc;
-    }
-
-    // Search for the first available transmit and receive DMA channels
-    *tx_channel = -1;
-    *rx_channel = -1;
-    for (i = 0; i < num_chan.num_channels; i++)
-    {
-        chan = &channel_info.channels[i];
-        if (chan->dir == AXIDMA_WRITE && chan->type == AXIDMA_DMA) {
-            *tx_channel = chan->channel_id;
-            break;
-        }
-    }
-    for (i = 0; i < num_chan.num_channels; i++)
-    {
-        chan = &channel_info.channels[i];
-        if (chan->dir == AXIDMA_READ && chan->type == AXIDMA_DMA) {
-            *rx_channel = chan->channel_id;
-            break;
-        }
-    }
-
-    if (*tx_channel == -1) {
-        fprintf(stderr, "No transmit DMA channels are present.\n");
-        free(channels);
-        return -ENODEV;
-    }
-    if (*rx_channel == -1) {
-        fprintf(stderr, "No receive DMA channels are present.\n");
-        free(channels);
-        return -ENODEV;
-    }
-
-    free(channels);
-    return 0;
-}
+/*----------------------------------------------------------------------------
+ * Verification Test
+ *----------------------------------------------------------------------------*/
 
 /* Initialize the two buffers, filling buffers with a preset but "random"
  * pattern. */
@@ -352,26 +319,85 @@ static bool verify_data(char *tx_buf, char *rx_buf, size_t tx_buf_size,
     return true;
 }
 
+static int single_transfer_test(axidma_dev_t dev, int tx_channel, void *tx_buf,
+        int tx_size, int rx_channel, void *rx_buf, int rx_size)
+{
+    int rc;
+
+    // Initialize the buffer region we're going to transmit
+    init_data(tx_buf, rx_buf, tx_size, rx_size);
+
+    /* Start all the remainder Tx and Rx transaction in case the main
+     * transaction has any dependencies with them. */
+    rc = start_remainder_transactions(dev, tx_channel, rx_channel, tx_size);
+    if (rc < 0) {
+        fprintf(stderr, "Unable to start remainder transactions.\n");
+        goto stop_rem;
+    }
+
+    // Perform the main transaction
+    rc = axidma_twoway_transfer(dev, tx_channel, tx_buf, tx_size,
+            rx_channel, rx_buf, rx_size, true);
+    if (rc < 0) {
+        goto stop_rem;
+    }
+
+    // Verify that the data in the buffer changed
+    if (!verify_data(tx_buf, rx_buf, tx_size, rx_size) < 0) {
+        rc = -EINVAL;
+        goto stop_rem;
+    }
+    rc = 0;
+
+    // Stop all the remainder transactions
+stop_rem:
+    stop_remainder_transactions(dev, tx_channel, rx_channel, tx_size);
+
+    return rc;
+}
+
+
+/*----------------------------------------------------------------------------
+ * Benchmarking Test
+ *----------------------------------------------------------------------------*/
+
 /* Profiles the transfer and receive rates for the DMA, reporting the throughput
  * of each channel in MB/s. */
-static int time_dma(int axidma_fd, struct axidma_inout_transaction *trans,
-                    int num_transfers)
+static int time_dma(axidma_dev_t dev, int tx_channel, void *tx_buf, int tx_size,
+        int rx_channel, void *rx_buf, int rx_size, int num_transfers)
 {
-    int i;
+    int i, rc;
     struct timeval start_time, end_time;
     double elapsed_time, tx_data_rate, rx_data_rate;
 
     // Begin timing
     gettimeofday(&start_time, NULL);
 
+    /* Start all the remainder Tx and Rx transaction in case the main
+     * transaction has any dependencies with them. */
+    rc = start_remainder_transactions(dev, tx_channel, rx_channel, tx_size);
+    if (rc < 0) {
+        fprintf(stderr, "Unable to start remainder transactions.\n");
+        goto stop_rem;
+    }
+
     // Perform n transfers
     for (i = 0; i < num_transfers; i++)
     {
-        if (ioctl(axidma_fd, AXIDMA_DMA_READWRITE, trans) < 0) {
-            perror("Failed to peform a read write DMA transaction");
+        rc = axidma_twoway_transfer(dev, tx_channel, tx_buf, tx_size,
+                rx_channel, rx_buf, rx_size, true);
+        if (rc < 0) {
             fprintf(stderr, "DMA failed on transfer %d, not reporting timing "
                     "results.\n", i+1);
-            return -1;
+            goto stop_rem;
+        }
+
+        rc = dispatch_remainder_transactions(dev, tx_channel, rx_channel,
+                                             tx_size);
+        if (rc < 0) {
+            fprintf(stderr, "Failed to disptach remainder transactions on "
+                    "transfer %d, not reporting timing results.\n", i+1);
+            goto stop_rem;
         }
     }
 
@@ -380,8 +406,8 @@ static int time_dma(int axidma_fd, struct axidma_inout_transaction *trans,
 
     // Compute the throughput of each channel
     elapsed_time = TVAL_TO_SEC(end_time) - TVAL_TO_SEC(start_time);
-    tx_data_rate = BYTE_TO_MB(trans->tx_buf_len) * num_transfers / elapsed_time;
-    rx_data_rate = BYTE_TO_MB(trans->rx_buf_len) * num_transfers / elapsed_time;
+    tx_data_rate = BYTE_TO_MB(tx_size) * num_transfers / elapsed_time;
+    rx_data_rate = BYTE_TO_MB(rx_size) * num_transfers / elapsed_time;
 
     // Report the statistics to the user
     printf("DMA Timing Statistics:\n");
@@ -390,99 +416,108 @@ static int time_dma(int axidma_fd, struct axidma_inout_transaction *trans,
     printf("\tReceive Throughput: %0.2f Mb/s\n", rx_data_rate);
     printf("\tTotal Throughput: %0.2f Mb/s\n", tx_data_rate + rx_data_rate);
 
-    return 0;
+    rc = 0;
+
+stop_rem:
+    stop_remainder_transactions(dev, tx_channel, rx_channel, tx_size);
+    return rc;
 }
+
+/*----------------------------------------------------------------------------
+ * Main Function
+ *----------------------------------------------------------------------------*/
 
 int main(int argc, char **argv)
 {
-    int rc, fd;
+    int rc;
     int num_transfers;
     int tx_channel, rx_channel;
-    size_t tx_transfer_size, rx_transfer_size;
+    int num_rx, num_tx;
+    size_t tx_size, rx_size;
     char *tx_buf, *rx_buf;
-    struct axidma_inout_transaction trans;
+    int *tx_chans, *rx_chans;
+    axidma_dev_t axidma_dev;
 
     // Check if the user overrided the default transfer size and number
-    if (parse_args(argc, argv, &tx_transfer_size, &rx_transfer_size,
+    if (parse_args(argc, argv, &tx_channel, &rx_channel, &tx_size, &rx_size,
                    &num_transfers) < 0) {
-        rc = -1;
+        rc = 1;
         goto ret;
     }
     printf("AXI DMA Benchmark Parameters:\n");
-    printf("\tTransmit Buffer Size: %0.2f Mb\n", BYTE_TO_MB(tx_transfer_size));
-    printf("\tReceive Buffer Size: %0.2f Mb\n", BYTE_TO_MB(rx_transfer_size));
+    printf("\tTransmit Buffer Size: %0.2f Mb\n", BYTE_TO_MB(tx_size));
+    printf("\tReceive Buffer Size: %0.2f Mb\n", BYTE_TO_MB(rx_size));
     printf("\tNumber of DMA Transfers: %d transfers\n\n", num_transfers);
 
-    // Open the AXI dma device, initializing anything necessary
-    fd = open("/dev/axidma", O_RDWR|O_EXCL);
-    if (fd < 0) {
-        perror("Error opening AXI DMA device");
-        rc = -1;
+    // Initialize the AXI DMA device
+    axidma_dev = axidma_init();
+    if (axidma_dev == NULL) {
+        fprintf(stderr, "Failed to initialize the AXI DMA device.\n");
+        rc = 1;
         goto ret;
     }
 
-    // Use the lowest numbered DMA channels for the transaction
-    if (find_dma_channels(fd, &tx_channel, &rx_channel) < 0) {
-        rc = -1;
-        goto close_axidma;
-    }
-
     // Map memory regions for the transmit and receive buffers
-    tx_buf = mmap(NULL, tx_transfer_size, PROT_READ|PROT_WRITE, MAP_SHARED, fd,
-                  (off_t)0);
-    if (tx_buf == MAP_FAILED) {
-        perror("Unable to mmap memory region from AXI DMA device");
+    tx_buf = axidma_malloc(axidma_dev, tx_size);
+    if (tx_buf == NULL) {
+        perror("Unable to allocatememory region from AXI DMA device");
         rc = -1;
-        goto close_axidma;
+        goto destroy_axidma;
     }
-    rx_buf = mmap(NULL, rx_transfer_size, PROT_READ|PROT_WRITE, MAP_SHARED, fd,
-                  (off_t)0);
+    rx_buf = axidma_malloc(axidma_dev, rx_size);
     if (rx_buf == MAP_FAILED) {
-        perror("Unable to mmap memory region from AXI DMA device");
+        perror("Unable to allocate memory region from AXI DMA device");
         rc = -1;
         goto free_tx_buf;
     }
 
-    // Initialize the buffer region we're going to transmit
-    init_data(tx_buf, rx_buf, tx_transfer_size, rx_transfer_size);
-
-    // Transmit the buffer to DMA a single time
-    trans.wait = true;
-    trans.tx_channel_id = tx_channel;
-    trans.tx_buf = tx_buf;
-    trans.tx_buf_len = tx_transfer_size;
-    trans.rx_channel_id = rx_channel;
-    trans.rx_buf = rx_buf;
-    trans.rx_buf_len = rx_transfer_size;
-    if (ioctl(fd, AXIDMA_DMA_READWRITE, &trans) < 0) {
-        perror("Failed to peform a read write DMA transaction");
-        rc = -1;
-        goto free_rx_buf;
+    // Get all the transmit and receive channels
+    tx_chans = axidma_get_dma_tx(axidma_dev, &num_tx);
+    if (num_tx < 1) {
+        fprintf(stderr, "Error: No transmit channels were found.\n");
+        return -ENODEV;
+    }
+    rx_chans = axidma_get_dma_rx(axidma_dev, &num_rx);
+    if (num_rx < 1) {
+        fprintf(stderr, "Error: No receive channels were found.\n");
+        return -ENODEV;
     }
 
-    // Verify that the data makes sense after the transfer
-    if (!verify_data(tx_buf, rx_buf, tx_transfer_size, rx_transfer_size)) {
-        rc = -1;
+    /* If the user didn't specify the channels, we assume that the transmit and
+     * receive channels are the lowest numbered ones. */
+    if (tx_channel == -1 && rx_channel == -1) {
+        tx_channel = tx_chans[0];
+        rx_channel = rx_chans[0];
+    }
+    printf("Using transmit channel %d and receive channel %d.\n", tx_channel,
+           rx_channel);
+
+    // Transmit the buffer to DMA a single time
+    rc = single_transfer_test(axidma_dev, tx_channel, tx_buf, tx_size,
+                              rx_channel, rx_buf, rx_size);
+    if (rc < 0) {
+        rc = 1;
         goto free_rx_buf;
     }
     printf("Single transfer test successfully completed!\n");
 
+
     // Time the DMA eingine
     printf("Beginning performance analysis of the DMA engine.\n\n");
-    if (time_dma(fd, &trans, num_transfers) < 0) {
-        rc = -1;
+    if (time_dma(axidma_dev, tx_channel, tx_buf, tx_size, rx_channel,
+                 rx_buf, rx_size, num_transfers) < 0) {
+        rc = 1;
         goto free_rx_buf;
     }
 
     rc = 0;
 
 free_rx_buf:
-    munmap(rx_buf, rx_transfer_size);
+    axidma_free(axidma_dev, rx_buf, rx_size);
 free_tx_buf:
-    munmap(tx_buf, tx_transfer_size);
-close_axidma:
-    close(fd);
+    axidma_free(axidma_dev, tx_buf, tx_size);
+destroy_axidma:
+    axidma_destroy(axidma_dev);
 ret:
     return rc;
 }
-

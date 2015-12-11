@@ -99,6 +99,35 @@ int start_remainder_transactions(axidma_dev_t dev, int tx_channel,
     return 0;
 }
 
+int dispatch_remainder_transactions(axidma_dev_t dev, int tx_channel,
+                                    int rx_channel, int tx_size)
+{
+    int buf_size;
+    int num_tx, num_rx;
+    int *tx_chans, *rx_chans;
+
+    assert(in_use);
+
+    // Determine the total number of transmit and receive channels
+    tx_chans = axidma_get_dma_tx(dev, &num_tx);
+    if (num_tx < 1) {
+        return -ENODEV;
+    }
+    rx_chans = axidma_get_dma_rx(dev, &num_rx);
+    if (num_rx < 1) {
+        return -ENODEV;
+    }
+
+    /* For any remainder channels, start the transactions in case the Tx/Rx
+     * pipline has dependencies on them. */
+    buf_size = tx_size * BUF_SCALE;
+    dispatch_transactions(dev, AXIDMA_WRITE, num_tx, tx_chans, tx_channel,
+                          rx_channel, buffer, buf_size, tx_chan_valid);
+    dispatch_transactions(dev, AXIDMA_READ, num_rx, rx_chans, tx_channel,
+                          rx_channel, buffer, buf_size, rx_chan_valid);
+
+    return 0;
+}
 void stop_remainder_transactions(axidma_dev_t dev, int tx_channel,
                                  int rx_channel, int tx_size)
 {

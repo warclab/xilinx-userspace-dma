@@ -34,7 +34,7 @@
 #include <errno.h>              // Error codes
 
 #include "util.h"               // Miscellaneous utilities
-#include "byte_conversion.h"    // Convert bytes to MBs
+#include "conversion.h"         // Convert bytes to MBs
 #include "dma_util.h"           // DMA helper functions
 #include "libaxidma.h"          // Interface ot the AXI DMA library
 
