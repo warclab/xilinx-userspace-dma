@@ -116,7 +116,6 @@ void axidma_destroy(axidma_dev_t dev)
     }
 
     // Free the device structure
-    free(dev);
     initialized = false;
     return;
 }
