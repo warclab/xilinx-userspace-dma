@@ -14,11 +14,11 @@
 CC = $(CROSS_COMPILE)gcc
 
 # The locations of the header files.
-INC_DIRS = ../inc ../axidma
+INC_DIRS = ../inc
 
 # Add the include directory to the CFLAGS for the kernel. This must be an absolute path.
 INC_FLAGS := $(addprefix -I $(PWD)/, $(INC_DIRS))
-EXTRA_CFLAGS +:= $(INC_FLAGS)
+EXTRA_CFLAGS += $(INC_FLAGS)
 
 # When natively compiling, we can infer the kernel's source tree directory.
 # Otherwise, this must be specified by the user on the command line
