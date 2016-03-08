@@ -21,17 +21,16 @@ all examples $(TARGETS): CFLAGS += -O3
 debug: CFLAGS += -g -O0
 
 # Location of the header files
-INC_DIRS = ../inc ../axidma
+INC_DIRS = ../inc
 INC_FLAGS = $(addprefix -I , $(INC_DIRS))
 
 # The location of the AXI DMA library used for compilation
-LIB_DIR = ../lib
+LIB_DIR = ../libaxidma
 LIBAXIDMA_FILES = libaxidma.c
 LIBAXIDMA = $(addprefix $(LIB_DIR)/, $(LIBAXIDMA_FILES))
 
-# The helper library files used for compilation
-UTIL_FILES = dma_util.c util.c
-UTIL = $(addprefix $(LIB_DIR)/, $(UTIL_FILES))
+# The local helper function files used across the example programs.
+UTIL = dma_util.c util.c
 
 ###############################################################################
 # Targets
