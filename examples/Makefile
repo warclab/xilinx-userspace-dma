@@ -11,6 +11,10 @@
 # Allow the user to specify cross-compilation from the command line
 CC = $(CROSS_COMPILE)gcc
 
+# The list of example programs, and their corresponding targets
+EXAMPLES = axidma_benchmark.c axidma_display_image.c axidma_transfer.c
+TARGETS = $(EXAMPLES:.c=)
+
 # Standard gcc flags for compilation
 CFLAGS = -Wall -Wextra -Werror -std=gnu99
 all examples $(TARGETS): CFLAGS += -O3
@@ -29,18 +33,14 @@ LIBAXIDMA = $(addprefix $(LIB_DIR)/, $(LIBAXIDMA_FILES))
 UTIL_FILES = dma_util.c util.c
 UTIL = $(addprefix $(LIB_DIR)/, $(UTIL_FILES))
 
-# The list of example programs, and their corresponding targets
-EXAMPLES = axidma_benchmark.c axidma_display_image.c axidma_transfer.c
-TARGETS = $(EXAMPLES:.c=)
-
 ###############################################################################
 # Targets
 ###############################################################################
 
 # A macro to define a recipe for a given example program target
 define CreateRecipe
-$(1): $(1).c $(LIBAXIDMA) $(UTIL)
-	$(CC) $(CFLAGS) $(INC_FLAGS) $$^ -o $$@
+$(1): $(1).c $$(LIBAXIDMA) $$(UTIL)
+	$$(CC) $$(CFLAGS) $$(INC_FLAGS) $$^ -o $$@
 endef
 
 # None of the targets correspond to actual source files

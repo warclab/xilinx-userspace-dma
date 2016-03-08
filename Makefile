@@ -31,7 +31,7 @@ driver:
 
 # Compile the example programs
 examples debug:
-	@cd $(EXAMPLES_DIR) && make
+	cd $(EXAMPLES_DIR) && make $@
 
 # Clean up all temporary files
 clean:
