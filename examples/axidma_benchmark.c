@@ -47,7 +47,7 @@
 
 // The size of data to send per transfer (1080p image, 7.24 MB)
 #define IMAGE_SIZE                  (1920 * 1080)
-#define DEFAULT_TRANSFER_SIZE       (IMAGE_SIZE * sizeof(int))
+#define DEFAULT_TRANSFER_SIZE       ((int)(IMAGE_SIZE * sizeof(int)))
 
 // The default number of transfers to benchmark
 #define DEFAULT_NUM_TRANSFERS       1000
