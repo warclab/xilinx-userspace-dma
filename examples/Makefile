@@ -21,7 +21,7 @@ all examples $(TARGETS): CFLAGS += -O3
 debug: CFLAGS += -g -O0
 
 # Location of the header files
-INC_DIRS = ../inc
+INC_DIRS = ../include
 INC_FLAGS = $(addprefix -I , $(INC_DIRS))
 
 # The location of the AXI DMA library used for compilation

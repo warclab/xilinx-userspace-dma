@@ -14,7 +14,7 @@
 CC = $(CROSS_COMPILE)gcc
 
 # The locations of the header files.
-INC_DIRS = ../inc
+INC_DIRS = ../include
 
 # Add the include directory to the CFLAGS for the kernel. This must be an absolute path.
 INC_FLAGS := $(addprefix -I $(PWD)/, $(INC_DIRS))
