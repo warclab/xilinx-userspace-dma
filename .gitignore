@@ -1,7 +1,7 @@
 # Binaries generated in the examples directory
-src/software/programs/axidma_benchmark
-src/software/programs/axidma_display_image
-src/software/programs/axidma_transfer
+examples/axidma_benchmark
+examples/axidma_display_image
+examples/axidma_transfer
 
 # Latex files
 *.out
