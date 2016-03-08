@@ -1,0 +1,131 @@
+# Binaries generated in the examples directory
+src/software/programs/axidma_benchmark
+src/software/programs/axidma_display_image
+src/software/programs/axidma_transfer
+
+# Latex files
+*.out
+*.log
+*.aux
+*.toc
+*.lof
+*.lot
+
+# Editor Backup Files
+*~
+.*.swp
+.*.swo
+*.bak
+*.backup
+
+# Quartus Project Files
+*sopc_*
+*.jdi
+*.ptf.*
+*.sof
+*.pof
+*.smsg
+*_inst.vhd
+*_generation_script*
+*.done
+*.txt
+*.qarlog
+*.rpt
+*.summary
+*.qws
+*.cmp
+*.eqn
+*.html
+*.jpg
+*.bak
+*.qar
+*.sopc_builder
+*~
+*.sdc
+*.tcl
+*.pin
+*.mif
+*.hex
+*.hdb
+*.cdb
+*.db_info
+*.xrf
+*.sft
+*.sdo
+*.qip
+*.qpf
+*.qsf
+*.sas
+*.qns
+*.sci
+*.flock
+*.logdb
+*.dfp
+*.hdb
+*.ammdb
+*.kpt
+*.dpi
+*.hb_info
+*.sig
+
+# Quartus Project Directories
+db/
+incremental_db/
+simulation/
+timing/
+testbench/
+*_sim/
+
+# Model Sim Files
+*.vho
+*.sdo
+*.xrf
+*.sft
+
+# Test log directory
+outputs/
+
+# Python copmiled files
+*.pyc
+
+# C Object files
+*.o
+*.ko
+*.obj
+*.elf
+
+# Kernel module files
+*.cmd
+*.ko
+*.mod.c
+Module.symvers
+modules.order
+.tmp_versions/
+
+# C Precompiled Headers
+*.gch
+*.pch
+
+# Libraries
+*.lib
+*.a
+*.la
+*.lo
+
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+
+# Any log type file
+*.log
+*log.txt
