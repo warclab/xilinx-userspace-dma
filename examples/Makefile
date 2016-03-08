@@ -53,4 +53,4 @@ all examples debug: $(TARGETS)
 $(foreach target, $(TARGETS), $(eval $(call CreateRecipe, $(target))))
 
 clean:
-	rm -f $(EXAMPLE_FILES)
+	rm -f $(TARGETS)
