@@ -134,7 +134,8 @@ static int axidma_init_sg_entry(struct scatterlist *sg_list, int index,
     // Get the DMA address from the user virtual address
     dma_addr = axidma_uservirt_to_dma(buf);
     if (dma_addr == (dma_addr_t)NULL) {
-        axidma_err("Unable to get DMA address for buffer at %p.\n", buf);
+        axidma_err("Unable to get DMA (physical) address for buffer at %p.\n",
+                   buf);
         return -EFAULT;
     }
 

@@ -39,8 +39,8 @@
     printk(KERN_ERR MODULE_NAME ": %s: %s: %d: " fmt, __FILENAME__, __func__, \
            __LINE__, ## __VA_ARGS__)
 #define axidma_info(fmt, ...) \
-    printk(KERN_ERR MODULE_NAME ": %s: %d: " fmt, __FILENAME__, __LINE__, \
-           ## __VA_ARGS__)
+    printk(KERN_ERR MODULE_NAME ": %s: %s: %d: " fmt, __FILENAME__, __func__, \
+            __LINE__, ## __VA_ARGS__)
 
 // Forward declaration of the callback data structure for DMA
 struct axidma_cb_data;
