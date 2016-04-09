@@ -17,12 +17,11 @@
 #include <linux/device.h>           // Definitions for class and device structs
 #include <linux/cdev.h>             // Definitions for character device structs
 #include <linux/signal.h>           // Definition of signal numbers
-
 #include <linux/dmaengine.h>        // Definitions for DMA structures and types
-#include <linux/amba/xilinx_dma.h>  // Xilinx DMA device ID's
 
 // Local dependencies
 #include "axidma_ioctl.h"           // IOCTL argument structures
+#include "version_portability.h"    // Deals with 3.x versus 4.x Linux
 
 /*----------------------------------------------------------------------------
  * Module Definitions

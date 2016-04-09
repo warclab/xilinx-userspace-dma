@@ -14,12 +14,12 @@
 #include <linux/wait.h>             // Completion related functions
 #include <linux/dmaengine.h>        // DMA types and functions
 #include <linux/slab.h>             // Allocation functions (ioremap)
-#include <linux/amba/xilinx_dma.h>  // Xilinx DMA config structures
 #include <linux/errno.h>            // Linux error codes
 
 // Local dependencies
 #include "axidma.h"                 // Internal definitions
 #include "axidma_ioctl.h"           // IOCTL interface definition and types
+#include "version_portability.h"    // Deals with 3.x versus 4.x Linux
 
 /*----------------------------------------------------------------------------
  * Internal Definitions
@@ -172,25 +172,6 @@ static void axidma_setup_dma_config(struct xilinx_dma_config *dma_config,
     return;
 }
 
-static void axidma_setup_vdma_config(struct xilinx_vdma_config *dma_config,
-                                     int width, int height, int depth)
-{
-    dma_config->vsize = height;         // Height of the image (in lines)
-    dma_config->hsize = width * depth;  // Width of the image (in bytes)
-    dma_config->stride = width * depth; // Number of bytes to process per line
-    dma_config->frm_dly = 0;            // Number of frames to delay
-    dma_config->gen_lock = 0;           // No genlock, VDMA runs freely
-    dma_config->master = 0;             // VDMA is the genlock master
-    dma_config->frm_cnt_en = 0;         // No interrupts based on frame count
-    dma_config->park = 0;               // Continuously process all frames
-    dma_config->park_frm = 0;           // Frame to stop (park) at (N/A)
-    dma_config->coalesc = 0;            // No transfer completion interrupts
-    dma_config->delay = 0;              // Disable the delay counter interrupt
-    dma_config->reset = 0;              // Don't reset the channel
-    dma_config->ext_fsync = 0;          // VDMA handles synchronizes itself
-    return;
-}
-
 static void axidma_dma_callback(void *data)
 {
     struct axidma_cb_data *cb_data;
@@ -249,7 +230,7 @@ static int axidma_prep_transfer(struct axidma_chan *axidma_chan,
             dma_tfr->vdma_tfr.height, dma_tfr->vdma_tfr.depth);
         config = &vdma_config;
     }
-    rc = dma_dev->device_control(chan, DMA_SLAVE_CONFIG, (unsigned long)config);
+    rc = dma_slave_config(dma_dev, chan, config);
     if (rc < 0) {
         axidma_err("Device control for the %s %s channel failed.\n", type,
                    direction);
@@ -298,7 +279,7 @@ static int axidma_prep_transfer(struct axidma_chan *axidma_chan,
     return 0;
 
 stop_dma:
-    dma_dev->device_control(chan, DMA_TERMINATE_ALL, 0);
+    dma_terminate_all(dma_dev, chan);
     return rc;
 }
 
@@ -342,7 +323,7 @@ static int axidma_start_transfer(struct axidma_chan *chan,
     return 0;
 
 stop_dma:
-    chan->chan->device->device_control(chan->chan, DMA_TERMINATE_ALL, 0);
+    dma_terminate_all(chan->chan->device, chan->chan);
     return rc;
 }
 
@@ -652,7 +633,7 @@ int axidma_stop_channel(struct axidma_device *dev,
     }
 
     // Terminate all DMA transactions on the given channel
-    return chan->chan->device->device_control(chan->chan, DMA_TERMINATE_ALL, 0);
+    return dma_terminate_all(chan->chan->device, chan->chan);
 }
 
 /*----------------------------------------------------------------------------
@@ -783,7 +764,7 @@ void axidma_dma_exit(struct axidma_device *dev)
     for (i = 0; i < dev->num_chans; i++)
     {
         chan = dev->channels[i].chan;
-        chan->device->device_control(chan, DMA_TERMINATE_ALL, 0);
+        dma_terminate_all(chan->device, chan);
         dma_release_channel(chan);
     }
 
