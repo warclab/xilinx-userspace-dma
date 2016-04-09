@@ -241,12 +241,12 @@ struct axidma_video_transaction {
  *
  * All of the frame buffers must be within an address range that was allocated
  * by a call to mmap with the AXI DMA device. Also, each buffer must
- * be able to hold a frame (width * height * depth bytes). The input array of
- * buffers must be a memory location that can holds `num_frame_buffers`
- * addresses.
+ * be able to hold a frame of (width * height * depth) bytes. The input array of
+ * buffers must be a memory location that holds `num_frame_buffers` addresses.
  *
- * This call is always non-blocking as the DMA engine will run forever. In order
- * to end the transaction, you must make a call to the stop dma channel ioctl.
+ * This call is always non-blocking as the VDMA engine will run forever. In
+ * order to end the transaction, you must make a call to the stop dma channel
+ * ioctl.
  *
  * Inputs:
  *  - channel_id - The id for the channel you want to send data over.

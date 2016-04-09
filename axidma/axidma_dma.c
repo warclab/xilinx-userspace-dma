@@ -45,11 +45,8 @@ struct axidma_transfer {
     struct task_struct *process;    // The process requesting the transfer
     struct axidma_cb_data *cb_data; // The callback data struct
 
-    // DMA and VDMA specific fields
+    // VDMA specific fields (kept as union for extensability)
     union {
-        struct {
-            bool cyclic_bd;         // Cyclic BD's, for continous trasfers
-        } dma_tfr;
         struct {
             int width;              // Width of the image in pixels
             int height;             // Height of the image in lines
@@ -166,13 +163,12 @@ static struct axidma_chan *axidma_get_chan(struct axidma_device *dev,
 }
 
 static void axidma_setup_dma_config(struct xilinx_dma_config *dma_config,
-        enum dma_transfer_direction direction, bool cyclic_bd)
+        enum dma_transfer_direction direction)
 {
     dma_config->direction = direction;  // Either to memory or from memory
     dma_config->coalesc = 1;            // Interrupt for one transfer completion
     dma_config->delay = 0;              // Disable the delay counter interrupt
     dma_config->reset = 0;              // Don't reset the DMA engine
-    dma_config->cyclic_bd = cyclic_bd;  // Select a continuous transfer or not
     return;
 }
 
@@ -246,8 +242,7 @@ static int axidma_prep_transfer(struct axidma_chan *axidma_chan,
 
     // Configure the channel appropiately based on whether it's DMA or VDMA
     if (dma_tfr->type == AXIDMA_DMA) {
-        axidma_setup_dma_config(&dma_config, dma_dir,
-                                dma_tfr->dma_tfr.cyclic_bd);
+        axidma_setup_dma_config(&dma_config, dma_dir);
         config = &dma_config;
     } else if (dma_tfr->type == AXIDMA_VDMA) {
         axidma_setup_vdma_config(&vdma_config, dma_tfr->vdma_tfr.width,
@@ -401,7 +396,6 @@ int axidma_read_transfer(struct axidma_device *dev,
         .dir = AXIDMA_READ,
         .type = AXIDMA_DMA,
         .wait = trans->wait,
-        .dma_tfr.cyclic_bd = false,
         .channel_id = trans->channel_id,
         .notify_signal = dev->notify_signal,
         .process = get_current(),
@@ -452,7 +446,6 @@ int axidma_write_transfer(struct axidma_device *dev,
         .dir = AXIDMA_WRITE,
         .type = AXIDMA_DMA,
         .wait = trans->wait,
-        .dma_tfr.cyclic_bd = false,
         .channel_id = trans->channel_id,
         .notify_signal = dev->notify_signal,
         .process = get_current(),
@@ -505,7 +498,6 @@ int axidma_rw_transfer(struct axidma_device *dev,
         .dir = AXIDMA_WRITE,
         .type = AXIDMA_DMA,
         .wait = false,
-        .dma_tfr.cyclic_bd = false,
         .channel_id = trans->tx_channel_id,
         .notify_signal = dev->notify_signal,
         .process = get_current(),
@@ -516,7 +508,6 @@ int axidma_rw_transfer(struct axidma_device *dev,
         .dir = AXIDMA_READ,
         .type = AXIDMA_DMA,
         .wait = trans->wait,
-        .dma_tfr.cyclic_bd = false,
         .channel_id = trans->rx_channel_id,
         .notify_signal = dev->notify_signal,
         .process = get_current(),
@@ -590,12 +581,14 @@ int axidma_video_write_transfer(struct axidma_device *dev,
     struct axidma_transfer tx_tfr = {
         .sg_len = trans->num_frame_buffers,
         .dir = AXIDMA_WRITE,
-        .type = AXIDMA_DMA,
+        .type = AXIDMA_VDMA,
         .wait = false,
-        .dma_tfr.cyclic_bd = true,
         .channel_id = trans->channel_id,
         .notify_signal = dev->notify_signal,
         .process = get_current(),
+        .vdma_tfr.width = trans->width,
+        .vdma_tfr.height = trans->height,
+        .vdma_tfr.depth = trans->depth,
     };
 
     // Allocate an array to store the scatter list structures for the buffers
