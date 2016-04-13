@@ -210,7 +210,7 @@ static int axidma_prep_transfer(struct axidma_chan *axidma_chan,
     type = axidma_type_to_string(dma_tfr->type);
     cb_data = dma_tfr->cb_data;
 
-    // Configure the channel appropiately based on whether it's DMA or VDMA
+    // Setup the configuration structure based on whether it's DMA or VDMA
     if (dma_tfr->type == AXIDMA_DMA) {
         axidma_setup_dma_config(&dma_config, dma_dir);
         config = &dma_config;
@@ -219,8 +219,11 @@ static int axidma_prep_transfer(struct axidma_chan *axidma_chan,
             dma_tfr->vdma_tfr.height, dma_tfr->vdma_tfr.depth);
         config = &vdma_config;
     }
-    rc = dma_slave_config(dma_dev, chan, config);
-    if (rc < 0) {
+
+    /* Certain versions of the Xilinx DMA drivers may not implement the channel
+     * configuration function, so allow for this case. */
+    rc = dmaengine_slave_config(chan, (struct dma_slave_config *)config);
+    if (rc < 0 && rc != -ENOSYS) {
         axidma_err("Device control for the %s %s channel failed.\n", type,
                    direction);
         goto stop_dma;

@@ -33,8 +33,6 @@
  * outstanding requests and configuring a DMA channel. */
 #define dma_terminate_all(dma_dev, dma_chan) \
     ((dma_dev)->device_terminate_all(dma_chan))
-#define dma_slave_config(dma_dev, dma_chan, config) \
-    ((dma_dev)->device_config(dma_chan, (struct dma_slave_config *)(config)))
 
 /* Setup the config structure for VDMA. In 4.x, the VDMA config no longer has
  * vsize, hsize, and stride fields. */
@@ -67,9 +65,6 @@ void axidma_setup_vdma_config(struct xilinx_vdma_config *dma_config, int width,
  * commands to DMA channels (e.g. configuring them or terminating). */
 #define dma_terminate_all(dma_dev, dma_chan) \
     ((dma_dev)->device_control(dma_chan, DMA_TERMINATE_ALL, 0))
-#define dma_slave_config(dma_dev, dma_chan, config) \
-    ((dma_dev)->device_control(dma_chan, DMA_SLAVE_CONFIG, \
-                               (unsigned long)(config)))
 
 // Setup the config structure for VDMA
 static inline
