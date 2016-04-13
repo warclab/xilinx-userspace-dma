@@ -13,8 +13,10 @@
 #include <linux/delay.h>            // Milliseconds to jiffies converstion
 #include <linux/wait.h>             // Completion related functions
 #include <linux/dmaengine.h>        // DMA types and functions
-#include <linux/slab.h>             // Allocation functions (ioremap)
+#include <linux/slab.h>             // Allocation functions
 #include <linux/errno.h>            // Linux error codes
+#include <linux/platform_device.h>  // Platform device definitions
+#include <linux/device.h>           // Device definitions and functions
 
 // Local dependencies
 #include "axidma.h"                 // Internal definitions
@@ -91,19 +93,6 @@ static char *axidma_dir_to_string(enum axidma_dir dma_dir)
 
     BUG_ON("Invalid AXI DMA direction found.\n");
     return NULL;
-}
-
-static int axidma_to_xilinx_type(enum axidma_type dma_type)
-{
-    switch (dma_type) {
-        case AXIDMA_DMA:
-            return XILINX_DMA_IP_DMA;
-        case AXIDMA_VDMA:
-            return XILINX_DMA_IP_VDMA;
-    }
-
-    BUG_ON("Invalid AXI DMA type found.\n");
-    return -1;
 }
 
 static char *axidma_type_to_string(enum axidma_type dma_type)
@@ -640,119 +629,97 @@ int axidma_stop_channel(struct axidma_device *dev,
  * Initialization and Cleanup
  *----------------------------------------------------------------------------*/
 
-static bool axidma_dmadev_filter(struct dma_chan *chan, void *match)
+static int axidma_request_channels(struct platform_device *pdev,
+                                   struct axidma_device *dev)
 {
-    return *(int *)chan->private == (int)match;
-}
-
-static void axidma_probe_chan(struct axidma_device *dev, int channel_id,
-    enum axidma_dir channel_dir, enum axidma_type channel_type,
-    dma_cap_mask_t dma_mask, int *num_type_chans)
-{
+    int rc, i;
+    int num_reserved_chans;
+    const char *dma_name;
     struct dma_chan *chan;
-    int chan_type, match;
-    enum dma_transfer_direction chan_dir;
 
-    // Pack together a match structure to identify the channel
-    chan_type = axidma_to_xilinx_type(channel_type);
-    chan_dir = axidma_to_dma_dir(channel_dir);
-    match = PACK_DMA_MATCH(channel_id, chan_type, chan_dir);
-    chan = dma_request_channel(dma_mask, axidma_dmadev_filter, (void *)match);
+    // For each channel, request exclusive access to the channel
+    num_reserved_chans = 0;
+    for (i = 0; i < dev->num_chans; i++)
+    {
+        // Get the name of the DMA channel
+        rc = axidma_of_parse_dma_name(pdev, i, &dma_name);
+        if (rc < 0) {
+            goto release_channels;
+        }
 
-    /* If we have a place to store the channels, do so. Otherwsie, this is the
-     * first probe, so we're counting channels, so we release them. */
-    if (chan != NULL && dev->channels == NULL) {
-        dma_release_channel(chan);
-        dev->num_chans += 1;
-        *num_type_chans += 1;
-    } else if (chan != NULL) {
-        dev->channels[dev->num_chans].dir = channel_dir;
-        dev->channels[dev->num_chans].type = channel_type;
-        dev->channels[dev->num_chans].channel_id = dev->num_chans;
-        dev->channels[dev->num_chans].chan = chan;
-        dev->num_chans += 1;
-        *num_type_chans += 1;
+        // Request exclusive access to the given DMA channel
+        chan = dma_request_slave_channel(&pdev->dev, dma_name);
+        if (IS_ERR(chan) || chan == NULL) {
+            axidma_err("Unable to get slave channel %d: %s.\n", i, dma_name);
+            rc = (chan == NULL) ? -ENODEV : PTR_ERR(chan);
+            goto release_channels;
+        }
+        dev->channels[i].chan = chan;
+        num_reserved_chans += 1;
     }
 
-    return;
+    return 0;
+
+release_channels:
+    // Release any channels that have been requested already so far
+    for (i = 0; i < num_reserved_chans; i++)
+    {
+        dma_release_channel(dev->channels[i].chan);
+    }
+    return rc;
 }
 
-static void axidma_probe_channels(struct axidma_device *dev,
-                                  dma_cap_mask_t dma_mask)
+int axidma_dma_init(struct platform_device *pdev, struct axidma_device *dev)
 {
-    int channel_id;
+    int rc;
+    size_t elem_size;
 
-    // Probe the available DMA receive and transmit channels
-    dev->num_chans = 0;
-    dev->num_dma_tx_chans = 0;
-    dev->num_dma_rx_chans = 0;
-    for (channel_id = 0; channel_id < AXIDMA_MAX_ID; channel_id++)
-    {
-        axidma_probe_chan(dev, channel_id, AXIDMA_WRITE, AXIDMA_DMA, dma_mask,
-                          &dev->num_dma_tx_chans);
-        axidma_probe_chan(dev, channel_id, AXIDMA_READ, AXIDMA_DMA, dma_mask,
-                          &dev->num_dma_rx_chans);
+    // Get the number of DMA channels listed in the device tree
+    dev->num_chans = axidma_of_num_channels(pdev);
+    if (dev->num_chans < 0) {
+        return dev->num_chans;
     }
 
-    // Probe the available VDMA receive and transmit channels
-    dev->num_vdma_tx_chans = 0;
-    dev->num_vdma_rx_chans = 0;
-    for (channel_id = 0; channel_id < AXIDMA_MAX_ID; channel_id++)
-    {
-        axidma_probe_chan(dev, channel_id, AXIDMA_WRITE, AXIDMA_VDMA, dma_mask,
-                          &dev->num_vdma_tx_chans);
-        axidma_probe_chan(dev, channel_id, AXIDMA_READ, AXIDMA_VDMA, dma_mask,
-                          &dev->num_vdma_rx_chans);
-    }
-
-    return;
-}
-
-int axidma_dma_init(struct axidma_device *dev)
-{
-    dma_cap_mask_t dma_mask;
-
-    // Setup the desired DMA capabilities
-    dma_cap_zero(dma_mask);
-    dma_cap_set(DMA_SLAVE | DMA_PRIVATE, dma_mask);
-
-    // Probe the AXI DMA devices, and find the number of channels
-    dev->channels = NULL;
-    axidma_probe_channels(dev, dma_mask);
-
-    if (dev->num_chans == 0) {
-        axidma_info("No DMA channels were found.\n");
-        axidma_info("DMA: Found 0 transmit channels and 0 receive channels.\n");
-        axidma_info("VDMA: Found 0 transmit channels and 0 receive channels."
-                    "\n");
-        return 0;
-    }
-
-    // Allocate an array to store all channel metadata structures
-    dev->channels = kmalloc(dev->num_chans*sizeof(dev->channels[0]),
-                            GFP_KERNEL);
+    // Allocate an array to store all the channel metdata structures
+    elem_size = sizeof(dev->channels[0]);
+    dev->channels = kmalloc(dev->num_chans * elem_size, GFP_KERNEL);
     if (dev->channels == NULL) {
         axidma_err("Unable to allocate memory for channel structures.\n");
         return -ENOMEM;
     }
 
-    // Allocate an array to store all the callback data structures
-    dev->cb_data = kmalloc(dev->num_chans*sizeof(dev->cb_data[0]), GFP_KERNEL);
+    // Allocate an array to store all callback structures, for async
+    elem_size = sizeof(dev->cb_data[0]);
+    dev->cb_data = kmalloc(dev->num_chans * elem_size, GFP_KERNEL);
     if (dev->cb_data == NULL) {
-        axidma_err("Unable to allocate memory for channel callback "
-                   "structures.\n");
-        return -ENOMEM;
+        axidma_err("Unable to allocate memory for callback structures.\n");
+        rc = -ENOMEM;
+        goto free_channels;
     }
 
-    // Probe the AXI DMA devices, but store the channel structs this time
-    axidma_probe_channels(dev, dma_mask);
+    // Parse the type and direction of each DMA channel from the device tree
+    rc = axidma_of_parse_dma_nodes(pdev, dev);
+    if (rc < 0) {
+        return rc;
+    }
 
-    // Inform the user of the DMA channels that were found
+    // Exclusively request all of the channels in the device tree entry
+    rc = axidma_request_channels(pdev, dev);
+    if (rc < 0) {
+        goto free_callback_data;
+    }
+
     axidma_info("DMA: Found %d transmit channels and %d receive channels.\n",
                 dev->num_dma_tx_chans, dev->num_dma_rx_chans);
     axidma_info("VDMA: Found %d transmit channels and %d receive channels.\n",
                 dev->num_vdma_tx_chans, dev->num_vdma_rx_chans);
     return 0;
+
+free_callback_data:
+    kfree(dev->cb_data);
+free_channels:
+    kfree(dev->channels);
+    return rc;
 }
 
 void axidma_dma_exit(struct axidma_device *dev)

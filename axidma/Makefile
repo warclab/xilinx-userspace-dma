@@ -29,7 +29,7 @@ endif
 
 # Add this module to the list of modules to compile for the kernel
 MODULE_NAME = axidma
-$(MODULE_NAME)-objs := axi_dma.o axidma_dma.o axidma_chrdev.o
+$(MODULE_NAME)-objs := axi_dma.o axidma_dma.o axidma_chrdev.o axidma_of.o
 obj-m += $(MODULE_NAME).o
 
 ###############################################################################

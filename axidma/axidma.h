@@ -18,6 +18,7 @@
 #include <linux/cdev.h>             // Definitions for character device structs
 #include <linux/signal.h>           // Definition of signal numbers
 #include <linux/dmaengine.h>        // Definitions for DMA structures and types
+#include <linux/platform_device.h>  // Defintions for a platform device
 
 // Local dependencies
 #include "axidma_ioctl.h"           // IOCTL argument structures
@@ -60,6 +61,7 @@ struct axidma_device {
     int num_vdma_rx_chans;          // The number of receive  VDMA channels
     int num_chans;                  // The total number of DMA channels
     int notify_signal;              // Signal used to notify transfer completion
+    struct platform_device *pdev;   // The platofrm device from the device tree
     struct axidma_cb_data *cb_data; // The callback data for each channel
     struct axidma_chan *channels;   // All available channels
 };
@@ -87,16 +89,8 @@ void axidma_chrdev_exit(struct axidma_device *dev);
 #define VALID_NOTIFY_SIGNAL(signal) \
     (SIGRTMIN <= (signal) && (signal) <= SIGRTMAX)
 
-// Packs the device id into a DMA match structure, to match DMA devices
-#define PACK_DMA_MATCH(channel_id, type, direction) \
-    (((direction) & 0xFF) | (type) | \
-     ((channel_id) << XILINX_DMA_DEVICE_ID_SHIFT))
-
-/*----------------------------------------------------------------------------
- * Function Prototypes
- *----------------------------------------------------------------------------*/
-
-int axidma_dma_init(struct axidma_device *dev);
+// Function Prototypes
+int axidma_dma_init(struct platform_device *pdev, struct axidma_device *dev);
 void axidma_dma_exit(struct axidma_device *dev);
 void axidma_get_num_channels(struct axidma_device *dev,
                              struct axidma_num_channels *num_chans);
@@ -113,5 +107,21 @@ int axidma_video_write_transfer(struct axidma_device *dev,
                                 struct axidma_video_transaction *trans);
 int axidma_stop_channel(struct axidma_device *dev, struct axidma_chan *chan);
 dma_addr_t axidma_uservirt_to_dma(void *user_addr);
+
+/*----------------------------------------------------------------------------
+ * Device Tree Definitions
+ *----------------------------------------------------------------------------*/
+
+// Macro for printing out an error message related to a device tree node
+#define axidma_node_err(node, fmt, ...) \
+    axidma_err("Device tree node %s: " fmt, node->name, ##__VA_ARGS__)
+
+// Function Prototypes
+int axidma_of_num_channels(struct platform_device *pdev);
+int axidma_of_parse_dma_nodes(struct platform_device *pdev,
+                              struct axidma_device *dev);
+int axidma_of_parse_dma_name(struct platform_device *pdev, int index,
+                             const char **dma_name);
+
 
 #endif /* AXIDMA_H_ */
