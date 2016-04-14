@@ -89,6 +89,7 @@ static int axidma_remove(struct platform_device *pdev)
     // Cleanup the DMA structures
     axidma_dma_exit(axidma_dev);
 
+    // Free the device structure
     kfree(axidma_dev);
     return 0;
 }

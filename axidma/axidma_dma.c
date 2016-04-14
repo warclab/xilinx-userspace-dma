@@ -232,8 +232,8 @@ static int axidma_prep_transfer(struct axidma_chan *axidma_chan,
     /* Configure the engine to send an interrupt acknowledgement upon
      * completion, and skip unmapping the buffer. */
     dma_flags = DMA_CTRL_ACK | DMA_COMPL_SKIP_DEST_UNMAP | DMA_PREP_INTERRUPT;
-    dma_txnd = dma_dev->device_prep_slave_sg(chan, sg_list, sg_len, dma_dir,
-                                             dma_flags, NULL);
+    dma_txnd = dmaengine_prep_slave_sg(chan, sg_list, sg_len, dma_dir,
+                                       dma_flags);
     if (dma_txnd == NULL) {
         axidma_err("Unable to prepare the dma engine for the %s %s buffer.\n",
                    type, direction);
@@ -258,7 +258,7 @@ static int axidma_prep_transfer(struct axidma_chan *axidma_chan,
         dma_txnd->callback_param = cb_data;
         dma_txnd->callback = axidma_dma_callback;
     }
-    dma_cookie = dma_txnd->tx_submit(dma_txnd);
+    dma_cookie = dmaengine_submit(dma_txnd);
     if (dma_submit_error(dma_cookie)) {
         axidma_err("Unable to submit the %s %s transaction to the engine.\n",
                    direction, type);
