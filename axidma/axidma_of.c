@@ -56,6 +56,7 @@ static int axidma_of_parse_channel(struct device_node *dma_node, int channel,
     int rc;
     const char *compatible;
     struct device_node *dma_chan_node;
+    u32 channel_id;
 
     // Verify that the DMA node has two channel (child) nodes, one for TX and RX
     if (of_get_child_count(dma_node) < 1) {
@@ -72,7 +73,18 @@ static int axidma_of_parse_channel(struct device_node *dma_node, int channel,
         dma_chan_node = of_get_next_child(dma_node, dma_chan_node);
     }
 
-    // TODO: Read the device id property from the channel's node
+    // Read out the channel's unique device id, and put it in the structure
+    if (of_find_property(dma_chan_node, "xlnx,device-id", NULL) == NULL) {
+        axidma_node_err(dma_chan_node, "DMA channel is missing the "
+                        "'xlnx,device-id' property.\n");
+        return -EINVAL;
+    }
+    rc = of_property_read_u32(dma_chan_node, "xlnx,device-id", &channel_id);
+    if (rc < 0) {
+        axidma_err("Unable to read the 'xlnx,device-id' property.\n");
+        return -EINVAL;
+    }
+    chan->channel_id = channel_id;
 
     // Read out the compatability string from the channel node
     if (of_find_property(dma_chan_node, "compatible", NULL) == NULL) {
@@ -93,6 +105,29 @@ static int axidma_of_parse_channel(struct device_node *dma_node, int channel,
         axidma_node_err(dma_chan_node, "DMA channel has an invalid "
                         "'compatible' property.\n");
         return rc;
+    }
+
+    return 0;
+}
+
+static int axidma_check_unique_ids(struct axidma_device *dev)
+{
+    int i, j;
+    struct axidma_chan *chan1, *chan2;
+
+    // For each channel, check that its ID does not match any other channel's
+    for (i = 0; i < dev->num_chans; i++)
+    {
+        chan1 = &dev->channels[i];
+        for (j = i+1; j < dev->num_chans; j++)
+        {
+            chan2 = &dev->channels[j];
+            if (chan1->channel_id == chan2->channel_id) {
+                axidma_err("Channels %d and %d in the 'dmas' list have the "
+                           "same channel id.\n", i, j);
+                return -EINVAL;
+            }
+        }
     }
 
     return 0;
@@ -197,12 +232,10 @@ int axidma_of_parse_dma_nodes(struct platform_device *pdev,
         if (rc < 0) {
             return rc;
         }
-
-        // Set the channel ID as the nth channel
-        dev->channels[i].channel_id = i;
     }
 
-    return 0;
+    // Check that all channels have unique channel ID's
+    return axidma_check_unique_ids(dev);
 }
 
 int axidma_of_parse_dma_name(struct platform_device *pdev, int index,
