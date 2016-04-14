@@ -155,9 +155,8 @@ static int axidma_mmap(struct file *file, struct vm_area_struct *vma)
     if (dma_vaddr == NULL) {
         axidma_err("Unable to allocate contiguous DMA memory region of size "
                    "%lu.\n", alloc_size);
-        axidma_err("Please make sure that the kernel was built with CMA "
-                   "support (CONFIG_CMA and related configs) and that you "
-                   "specified `cma=<size>` on the kernel command line.\n");
+        axidma_err("Please make sure that you specified cma=<size> on the "
+                   "kernel command line, and the size is large enough.\n");
         rc = -ENOMEM;
         goto free_vma_data;
     }
