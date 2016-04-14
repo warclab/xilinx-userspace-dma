@@ -12,7 +12,6 @@
 
 // Kernel Dependencies
 #include <linux/of.h>               // Device tree parsing functions
-#include <linux/string.h>           // String helper functions
 #include <linux/platform_device.h>  // Platform device definitions
 
 // Local Dependencies
@@ -23,27 +22,39 @@
  * Internal Helper Functions
  *----------------------------------------------------------------------------*/
 
-static int axidma_parse_compatible_property(const char *compatible,
+static int axidma_parse_compatible_property(struct device_node *dma_chan_node,
         struct axidma_chan *chan, struct axidma_device *dev)
 {
-    // Determine if the channel is DMA or VDMA, and if is transmit or receive
-    if (strcmp(compatible, "xlnx,axi-dma-mm2s-channel") == 0) {
+    struct device_node *np;
+
+    // Shorten the name for the dma_chan_node
+    np = dma_chan_node;
+
+    // Determine if the channel is DMA or VDMA, and if it is transmit or receive
+    if (of_device_is_compatible(np, "xlnx,axi-dma-mm2s-channel") > 0) {
         chan->type = AXIDMA_DMA;
         chan->dir = AXIDMA_WRITE;
         dev->num_dma_tx_chans += 1;
-    } else if (strcmp(compatible, "xlnx,axi-dma-s2mm-channel") == 0) {
+    } else if (of_device_is_compatible(np, "xlnx,axi-dma-s2mm-channel") > 0) {
         chan->type = AXIDMA_DMA;
         chan->dir = AXIDMA_READ;
         dev->num_dma_rx_chans += 1;
-    } else if (strcmp(compatible, "xlnx,axi-vdma-mm2s-channel") == 0) {
+    } else if (of_device_is_compatible(np, "xlnx,axi-vdma-mm2s-channel") > 0) {
         chan->type = AXIDMA_VDMA;
         chan->dir = AXIDMA_WRITE;
         dev->num_vdma_tx_chans += 1;
-    } else if (strcmp(compatible, "xlnx,axi-vdma-s2mm-channel") == 0) {
+    } else if (of_device_is_compatible(np, "xlnx,axi-vdma-s2mm-channel") > 0) {
         chan->type = AXIDMA_VDMA;
         chan->dir = AXIDMA_READ;
         dev->num_dma_rx_chans += 1;
+    } else if (of_find_property(np, "compatible", NULL) == NULL) {
+        axidma_node_err(np, "DMA channel lacks 'compatible' property.\n");
     } else {
+        axidma_node_err(np, "DMA channel has an invalid 'compatible' "
+                        "property.\n");
+        axidma_err("The 'compatible' property must be one of: {"
+                   "xlnx,axi-dma-mm2s-channel, xlnx,axi-dma-mm2s-channel, "
+                   "xlnx,axi-dma-mm2s-channel, xlnx,axi-dma-mm2s-channel}.\n");
         return -EINVAL;
     }
 
@@ -54,7 +65,6 @@ static int axidma_of_parse_channel(struct device_node *dma_node, int channel,
         struct axidma_chan *chan, struct axidma_device *dev)
 {
     int rc;
-    const char *compatible;
     struct device_node *dma_chan_node;
     u32 channel_id;
 
@@ -86,24 +96,9 @@ static int axidma_of_parse_channel(struct device_node *dma_node, int channel,
     }
     chan->channel_id = channel_id;
 
-    // Read out the compatability string from the channel node
-    if (of_find_property(dma_chan_node, "compatible", NULL) == NULL) {
-        axidma_node_err(dma_chan_node, "DMA channel is missing the "
-                        "'compatible' property.\n");
-        return -EINVAL;
-    }
-    rc = of_property_read_string(dma_chan_node, "compatible", &compatible);
-    if (rc < 0) {
-        axidma_node_err(dma_chan_node, "Unable to read 'compatible' "
-                        "property.\n");
-        return -EINVAL;
-    }
-
     // Use the compatible string to determine the channel's information
-    rc = axidma_parse_compatible_property(compatible, chan, dev);
+    rc = axidma_parse_compatible_property(dma_chan_node, chan, dev);
     if (rc < 0) {
-        axidma_node_err(dma_chan_node, "DMA channel has an invalid "
-                        "'compatible' property.\n");
         return rc;
     }
 
