@@ -18,7 +18,7 @@ INC_DIRS = ../include
 
 # Add the include directory to the CFLAGS for the kernel. This must be an absolute path.
 INC_FLAGS := $(addprefix -I $(PWD)/, $(INC_DIRS))
-EXTRA_CFLAGS += $(INC_FLAGS)
+EXTRA_CFLAGS += $(INC_FLAGS) -Werror
 
 # When natively compiling, we can infer the kernel's source tree directory.
 # Otherwise, this must be specified by the user on the command line
