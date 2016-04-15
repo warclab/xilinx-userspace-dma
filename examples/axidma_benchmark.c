@@ -252,8 +252,8 @@ static void init_data(char *tx_buf, char *rx_buf, size_t tx_buf_size,
 /* Verify the two buffers. For transmit, verify that it is unchanged. For
  * receive, we don't know the PL fabric function, so the best we can
  * do is check if it changed and warn the user if it is not. */
-static bool verify_data(char *tx_buf, char *rx_buf, size_t tx_buf_size,
-                        size_t rx_buf_size)
+static int verify_data(char *tx_buf, char *rx_buf, size_t tx_buf_size,
+                       size_t rx_buf_size)
 {
     int *transmit_buffer, *receive_buffer;
     size_t i, rx_data_same, rx_data_units;
@@ -270,7 +270,7 @@ static bool verify_data(char *tx_buf, char *rx_buf, size_t tx_buf_size,
                     "at byte %zu.\n", i);
             fprintf(stderr, "Expected 0x%08x, found 0x%08x.\n", TEST_PATTERN(i),
                     tx_buf[i]);
-            return false;
+            return -EINVAL;
         }
     }
 
@@ -282,7 +282,7 @@ static bool verify_data(char *tx_buf, char *rx_buf, size_t tx_buf_size,
                     "at byte %zu.\n", i);
             fprintf(stderr, "Expected 0x%08x, found 0x%08x.\n", TEST_PATTERN(i),
                     tx_buf[i]);
-            return false;
+            return -EINVAL;
         }
     }
 
@@ -307,7 +307,7 @@ static bool verify_data(char *tx_buf, char *rx_buf, size_t tx_buf_size,
     rx_data_units = rx_buf_size / sizeof(int) + rx_buf_size % sizeof(int);
     if (rx_data_same == rx_data_units) {
         fprintf(stderr, "Test Failed! The receive buffer was not updated.\n");
-        return false;
+        return -EINVAL;
     } else if (rx_data_same >= rx_data_units / 10) {
         match_fraction = ((double)rx_data_same) / ((double)rx_data_units);
         printf("Warning: %0.2f%% of the receive buffer matches the "
@@ -316,7 +316,7 @@ static bool verify_data(char *tx_buf, char *rx_buf, size_t tx_buf_size,
                "updated.\n");
     }
 
-    return true;
+    return 0;
 }
 
 static int single_transfer_test(axidma_dev_t dev, int tx_channel, void *tx_buf,
@@ -343,11 +343,7 @@ static int single_transfer_test(axidma_dev_t dev, int tx_channel, void *tx_buf,
     }
 
     // Verify that the data in the buffer changed
-    if (!verify_data(tx_buf, rx_buf, tx_size, rx_size) < 0) {
-        rc = -EINVAL;
-        goto stop_rem;
-    }
-    rc = 0;
+    rc = verify_data(tx_buf, rx_buf, tx_size, rx_size);
 
     // Stop all the remainder transactions
 stop_rem:
@@ -475,12 +471,14 @@ int main(int argc, char **argv)
     tx_chans = axidma_get_dma_tx(axidma_dev, &num_tx);
     if (num_tx < 1) {
         fprintf(stderr, "Error: No transmit channels were found.\n");
-        return -ENODEV;
+        rc = -ENODEV;
+        goto free_rx_buf;
     }
     rx_chans = axidma_get_dma_rx(axidma_dev, &num_rx);
     if (num_rx < 1) {
         fprintf(stderr, "Error: No receive channels were found.\n");
-        return -ENODEV;
+        rc = -ENODEV;
+        goto free_rx_buf;
     }
 
     /* If the user didn't specify the channels, we assume that the transmit and
@@ -496,7 +494,6 @@ int main(int argc, char **argv)
     rc = single_transfer_test(axidma_dev, tx_channel, tx_buf, tx_size,
                               rx_channel, rx_buf, rx_size);
     if (rc < 0) {
-        rc = 1;
         goto free_rx_buf;
     }
     printf("Single transfer test successfully completed!\n");
@@ -504,13 +501,8 @@ int main(int argc, char **argv)
 
     // Time the DMA eingine
     printf("Beginning performance analysis of the DMA engine.\n\n");
-    if (time_dma(axidma_dev, tx_channel, tx_buf, tx_size, rx_channel,
-                 rx_buf, rx_size, num_transfers) < 0) {
-        rc = 1;
-        goto free_rx_buf;
-    }
-
-    rc = 0;
+    rc = time_dma(axidma_dev, tx_channel, tx_buf, tx_size, rx_channel, rx_buf,
+                  rx_size, num_transfers);
 
 free_rx_buf:
     axidma_free(axidma_dev, rx_buf, rx_size);
