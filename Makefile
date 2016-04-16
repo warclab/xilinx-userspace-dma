@@ -12,7 +12,7 @@
 ###############################################################################
 
 # Location of the example programs, and the driver
-DRIVER_DIR = axidma
+DRIVER_DIR = driver
 EXAMPLES_DIR = examples
 
 ###############################################################################
