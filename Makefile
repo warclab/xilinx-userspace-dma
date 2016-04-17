@@ -45,7 +45,7 @@ all: create_output_dir driver examples
 
 # Compile the axidma driver
 driver:
-	cd $(DRIVER_DIR) && make KBUILD_DIR=$(KBUILD_DIR) OUTPUT_DIR=$(OUT_DIR)
+	@cd $(DRIVER_DIR) && make KBUILD_DIR=$(KBUILD_DIR) OUTPUT_DIR=$(OUT_DIR)
 
 # Compile the example programs
 examples debug:
