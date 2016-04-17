@@ -25,7 +25,9 @@ OUTPUT_DIR ?= outputs
 # If either of the directory arguments were specified as relative paths, then
 # fix them up since they will be referenced in Makefiles in lower directories
 ifneq (/,$(shell echo $${OUTPUT_DIR:0:1}))
-override OUTPUT_DIR := ../$(OUTPUT_DIR)
+OUT_DIR := ../$(OUTPUT_DIR)
+else
+OUT_DIR := $(OUTPUT_DIR)
 endif
 
 ifdef KBUILD_DIR
@@ -44,22 +46,19 @@ endif
 # By default, compile the example files in release mode
 all: create_output_dir driver examples
 
-# Create the output directory where compiled files are stored
-create_output_dir:
-	@mkdir -p $(OUTPUT_DIR)
-
 # Compile the axidma driver
-driver: create_output_dir
-	cd $(DRIVER_DIR) && make KBUILD_DIR=$(KBUILD_DIR) OUTPUT_DIR=$(OUTPUT_DIR)
+driver:
+	cd $(DRIVER_DIR) && make KBUILD_DIR=$(KBUILD_DIR) OUTPUT_DIR=$(OUT_DIR)
 
 # Compile the example programs
-examples debug: create_output_dir
-	@cd $(EXAMPLES_DIR) && make OUTPUT_DIR=$(OUTPUT_DIR) $@
+examples debug:
+	@cd $(EXAMPLES_DIR) && make OUTPUT_DIR=$(OUT_DIR) $@
 
 # Clean up all temporary files
 clean:
-	@cd $(DRIVER_DIR) && make KBUILD_DIR=$(KBUILD_DIR) OUTPUT_DIR=$(OUTPUT_DIR) clean
-	@cd $(EXAMPLES_DIR) && make OUTPUT_DIR=$(OUTPUT_DIR) clean
+	@cd $(DRIVER_DIR) && make KBUILD_DIR=$(KBUILD_DIR) OUTPUT_DIR=$(OUT_DIR) \
+		clean
+	@cd $(EXAMPLES_DIR) && make OUTPUT_DIR=$(OUT_DIR) clean
 	rm -rf $(OUTPUT_DIR)
 
 # Display a help message to the user
@@ -73,11 +72,11 @@ help:
 	@echo
 	@echo "\tdriver"
 	@echo "\t    Compiles the AXI DMA driver. "
-	@echo "\t    Kernel object file is generated at $(DRIVER_DIR)/axidma.ko."
+	@echo "\t    Kernel object file is generated at $(OUTPUT_DIR)/axidma.ko."
 	@echo
 	@echo "\texamples"
 	@echo "\t    Compiles the example programs for the AXI DMA driver."
-	@echo "\t    Generated executables are found in $(EXAMPLES_DIR)."
+	@echo "\t    Generated executables are found in $(OUTPUT_DIR)."
 	@echo
 	@echo "\tdebug"
 	@echo "\t    Compiles the example programs in debug mode, with symbols."
