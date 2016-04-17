@@ -43,28 +43,33 @@ endif
 
 # A macro to define a recipe for a given example program target
 define CreateRecipe
-$(1): create_output_dir $(1).c $$(LIBAXIDMA) $$(UTIL)
-	$$(CC) $$(CFLAGS) $$(INC_FLAGS) $$(filter-out $$<,$$^) -o $$(OUTPUT_DIR)$$@
+ifdef OUTPUT_DIR
+$(1): $(OUTPUT_DIR) $(1).c $$(LIBAXIDMA) $$(UTIL)
+	$$(CC) $$(CFLAGS) $$(INC_FLAGS) $$(filter-out $$<,$$^) -o $$@
+else
+$(1): $(1).c $$(LIBAXIDMA) $$(UTIL)
+	$$(CC) $$(CFLAGS) $$(INC_FLAGS) $$^ -o $$@
+endif
 endef
 
 ###############################################################################
 # Targets
 ###############################################################################
 
-# None of the targets correspond to actual source files
-.PHONY: all create_output_dir examples debug $(TARGETS) clean
+# These targets don't correspond to actual generated files
+.PHONY: all examples debug clean
 
 # Build all of the example files
-all examples debug: create_output_dir $(TARGETS)
+all examples debug: $(OUTPUT_DIR) $(TARGETS)
 
 # Creates the output directory where the compiled files are stored
-create_output_dir:
+$(OUTPUT_DIR):
 ifdef OUTPUT_DIR
 	@mkdir -p $(OUTPUT_DIR)
 endif
 
 # Generate the rules for each example program
-$(foreach target, $(TARGETS), $(eval $(call CreateRecipe, $(target))))
+$(foreach target,$(TARGETS),$(eval $(call CreateRecipe, $(target))))
 
 clean:
 	rm -f $(TARGETS)
