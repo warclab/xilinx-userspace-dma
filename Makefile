@@ -11,32 +11,56 @@
 # Configuration
 ###############################################################################
 
+# Set the shell to be used as the BASH shell
+SHELL = /bin/bash
+
 # Location of the example programs, and the driver
 DRIVER_DIR = driver
 EXAMPLES_DIR = examples
+
+# The location where the output executables and kernel object file will be
+# stored. This may be overriden by the user
+OUTPUT_DIR ?= outputs
+
+# If either of the directory arguments were specified as relative paths, then
+# fix them up since they will be referenced in Makefiles in lower directories
+ifneq (/,$(shell echo $${OUTPUT_DIR:0:1}))
+override OUTPUT_DIR := ../$(OUTPUT_DIR)
+endif
+
+ifdef KBUILD_DIR
+ifneq (/,$(shell echo $${KBUILD_DIR:0:1}))
+override KBUILD_DIR := ../$(KBUILD_DIR)
+endif
+endif
 
 ###############################################################################
 # Targets
 ###############################################################################
 
 # None of the targets correspond to actual files
-.PHONY: all driver examples debug clean
+.PHONY: all driver examples debug clean create_output_dir
 
 # By default, compile the example files in release mode
-all: driver examples
+all: create_output_dir driver examples
+
+# Create the output directory where compiled files are stored
+create_output_dir:
+	@mkdir -p $(OUTPUT_DIR)
 
 # Compile the axidma driver
-driver:
-	@cd $(DRIVER_DIR) && make
+driver: create_output_dir
+	cd $(DRIVER_DIR) && make KBUILD_DIR=$(KBUILD_DIR) OUTPUT_DIR=$(OUTPUT_DIR)
 
 # Compile the example programs
-examples debug:
-	cd $(EXAMPLES_DIR) && make $@
+examples debug: create_output_dir
+	@cd $(EXAMPLES_DIR) && make OUTPUT_DIR=$(OUTPUT_DIR) $@
 
 # Clean up all temporary files
 clean:
-	@cd $(DRIVER_DIR) && make clean
-	@cd $(EXAMPLES_DIR) && make clean
+	@cd $(DRIVER_DIR) && make KBUILD_DIR=$(KBUILD_DIR) OUTPUT_DIR=$(OUTPUT_DIR) clean
+	@cd $(EXAMPLES_DIR) && make OUTPUT_DIR=$(OUTPUT_DIR) clean
+	rm -rf $(OUTPUT_DIR)
 
 # Display a help message to the user
 help:
@@ -78,6 +102,11 @@ help:
 	@echo "\t    The path to the kernel source tree to build the driver for."
 	@echo "\t    Required when cross-compiling the driver. Otherwise, may be"
 	@echo "\t    left unspecified. If it is, the system default is used."
+	@echo
+	@echo "\tOUTPUT_DIR"
+	@echo "\t    The path where the generated code files (both the kernel "
+	@echo "\t    object file and executables) will be stored. The default "
+	@echo "\t    is the "outputs" in the top-level directory."
 	@echo "Examples:"
 	@echo "\tmake"
 	@echo "\tmake CROSS_COMPILE=arm-linux-gnueabi- ARCH=arm KBUILD_DIR=/home/kernels/linux/ driver"

@@ -3,6 +3,9 @@ examples/axidma_benchmark
 examples/axidma_display_image
 examples/axidma_transfer
 
+# The outputs directory, where the generated files are stored
+outputs/
+
 # Latex files
 *.out
 *.log
