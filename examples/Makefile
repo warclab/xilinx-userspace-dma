@@ -22,12 +22,12 @@ debug: CFLAGS += -g -O0
 
 # Location of the header files
 INC_DIRS = ../include
-INC_FLAGS = $(addprefix -I , $(INC_DIRS))
+INC_FLAGS = $(addprefix -I ,$(INC_DIRS))
 
 # The location of the AXI DMA library used for compilation
 LIB_DIR = ../libaxidma
 LIBAXIDMA_FILES = libaxidma.c
-LIBAXIDMA = $(addprefix $(LIB_DIR)/, $(LIBAXIDMA_FILES))
+LIBAXIDMA = $(addprefix $(LIB_DIR)/,$(LIBAXIDMA_FILES))
 
 # The local helper function files used across the example programs.
 UTIL = dma_util.c util.c
@@ -48,7 +48,7 @@ TARGETS := $(addprefix $(OUTPUT_DIR),$(TARGETS))
 
 # A macro to define a recipe for a given example program target
 define CreateRecipe
-$(OUTPUT_DIR)$(1:%.c=%): $$(OUTPUT_DIR) $(1) $$(LIBAXIDMA) $$(UTIL)
+$$(OUTPUT_DIR)$(1:%.c=%): $$(OUTPUT_DIR) $(1) $$(LIBAXIDMA) $$(UTIL)
 	$$(CC) $$(CFLAGS) $$(INC_FLAGS) $$(filter-out $$<,$$^) -o $$@
 endef
 
