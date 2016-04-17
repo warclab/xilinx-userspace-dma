@@ -65,6 +65,10 @@ endif
 # Make sure that the user defined all of the needed variables
 check:
 ifndef KBUILD_DIR
-	@echo "Error: The variable KBUILD_DIR must be specified when cross-compiling."
+	@printf "Error: The variable KBUILD_DIR must be specified when cross-compiling.\n"
+	@exit 1
+endif
+ifeq (,$(wildcard $(KBUILD_DIR)))
+	@printf "Error: $(KBUILD_DIR): The kernel build (source tree) directory does not exist.\n"
 	@exit 1
 endif
