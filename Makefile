@@ -21,14 +21,14 @@ OUTPUT_DIR ?= outputs
 
 # If either of the directory arguments were specified as relative paths, then
 # fix them up since they will be referenced in Makefiles in lower directories
-ifneq (/,$(shell echo $${OUTPUT_DIR:0:1}))
+ifeq ($(OUTPUT_DIR),$(OUTPUT_DIR:/%=%))
 OUT_DIR := ../$(OUTPUT_DIR)
 else
 OUT_DIR := $(OUTPUT_DIR)
 endif
 
 ifdef KBUILD_DIR
-ifneq (/,$(shell echo $${KBUILD_DIR:0:1}))
+ifeq ($(KBUILD_DIR),$(KBUILD_DIR:/%=%))
 override KBUILD_DIR := ../$(KBUILD_DIR)
 endif
 endif
