@@ -26,8 +26,8 @@ EXTRA_CFLAGS += $(INC_FLAGS) -Werror
 # When natively compiling, we can infer the kernel's source tree directory.
 # Otherwise, this must be specified by the user on the command line
 ifndef CROSS_COMPILE
-	KERNEL_VERSION = $(shell uname -r)
-	KBUILD_DIR ?= /lib/modules/$(KERNEL_VERSION)/build/
+KERNEL_VERSION = $(shell uname -r)
+override KBUILD_DIR = /lib/modules/$(KERNEL_VERSION)/build/
 endif
 
 # Add this module to the list of modules to compile for the kernel
