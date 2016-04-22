@@ -347,7 +347,7 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
     if (_IOC_TYPE(cmd) != AXIDMA_IOCTL_MAGIC) {
         axidma_err("IOCTL command magic number does not match.\n");
         return -ENOTTY;
-    } else if (_IOC_NR(cmd) > AXIDMA_NUM_IOCTLS) {
+    } else if (_IOC_NR(cmd) >= AXIDMA_NUM_IOCTLS) {
         axidma_err("IOCTL command is out of range for this device.\n");
         return -ENOTTY;
     }

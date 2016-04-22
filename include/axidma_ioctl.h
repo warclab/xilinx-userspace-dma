@@ -104,7 +104,7 @@ struct axidma_video_transaction {
 #define AXIDMA_IOCTL_MAGIC              'W'
 
 // The number of IOCTL's implemented, used for verification
-#define AXIDMA_NUM_IOCTLS               8
+#define AXIDMA_NUM_IOCTLS               10
 
 /**
  * Returns the number of available DMA channels in the system.
