@@ -161,6 +161,14 @@ static int axidma_mmap(struct file *file, struct vm_area_struct *vma)
         goto free_vma_data;
     }
 
+    // Map the region into userspace
+    rc = dma_mmap_coherent(NULL, vma, dma_vaddr, dma_addr, alloc_size);
+    if (rc < 0) {
+        axidma_err("Unable to remap address %p to userspace address 0x%08lx, "
+                   "size %lu.\n", dma_vaddr, vma->vm_start, alloc_size);
+        goto free_dma_region;
+    }
+
     /* Override the VMA close with our call, so that we can free the DMA region
      * when the memory region is closed. Pass in the data to do so. */
     vma_data->dma_vaddr = dma_vaddr;
@@ -169,19 +177,10 @@ static int axidma_mmap(struct file *file, struct vm_area_struct *vma)
     vma->vm_ops = &axidma_vm_ops;
     vma->vm_private_data = vma_data;
 
-    // Map the region into userspace
-    rc = remap_pfn_range(vma, vma->vm_start, vmalloc_to_pfn(dma_vaddr),
-                         alloc_size, vma->vm_page_prot);
-    if (rc < 0) {
-        axidma_err("Unable to remap address %p to userspace address 0x%08lx, "
-                   "size %lu.\n", dma_vaddr, vma->vm_start, alloc_size);
-        goto free_dma_region;
-    }
-
     return 0;
 
 free_dma_region:
-    dma_free_coherent(dev->device, alloc_size, dma_vaddr, dma_addr);
+    dma_free_coherent(NULL, alloc_size, dma_vaddr, dma_addr);
 free_vma_data:
     kfree(vma_data);
 ret:
