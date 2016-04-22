@@ -112,16 +112,16 @@ static char *axidma_type_to_string(enum axidma_type dma_type)
  * DMA Operations Helper Functions
  *----------------------------------------------------------------------------*/
 
-static int axidma_init_sg_entry(struct scatterlist *sg_list, int index,
-                                void *buf, size_t buf_len)
+static int axidma_init_sg_entry(struct axidma_device *dev,
+        struct scatterlist *sg_list, int index, void *buf, size_t buf_len)
 {
     dma_addr_t dma_addr;
 
     // Get the DMA address from the user virtual address
-    dma_addr = axidma_uservirt_to_dma(buf);
+    dma_addr = axidma_uservirt_to_dma(dev, buf, buf_len);
     if (dma_addr == (dma_addr_t)NULL) {
-        axidma_err("Unable to get DMA (physical) address for buffer at %p.\n",
-                   buf);
+        axidma_err("Requested transfer address %p does not fall within a "
+                   "previously allocated DMA buffer.\n", buf);
         return -EFAULT;
     }
 
@@ -376,7 +376,8 @@ int axidma_read_transfer(struct axidma_device *dev,
 
     // Setup the scatter-gather list for the transfer (only one entry)
     sg_init_table(rx_tfr.sg_list, rx_tfr.sg_len);
-    rc = axidma_init_sg_entry(rx_tfr.sg_list, 0, trans->buf, trans->buf_len);
+    rc = axidma_init_sg_entry(dev, rx_tfr.sg_list, 0, trans->buf,
+                              trans->buf_len);
     if (rc < 0) {
         return rc;
     }
@@ -426,7 +427,8 @@ int axidma_write_transfer(struct axidma_device *dev,
 
     // Setup the scatter-gather list for the transfer (only one entry)
     sg_init_table(tx_tfr.sg_list, tx_tfr.sg_len);
-    rc = axidma_init_sg_entry(tx_tfr.sg_list, 0, trans->buf, trans->buf_len);
+    rc = axidma_init_sg_entry(dev, tx_tfr.sg_list, 0, trans->buf,
+                              trans->buf_len);
     if (rc < 0) {
         return rc;
     }
@@ -488,13 +490,13 @@ int axidma_rw_transfer(struct axidma_device *dev,
 
     // Setup the scatter-gather list for the transfers (only one entry)
     sg_init_table(tx_tfr.sg_list, tx_tfr.sg_len);
-    rc = axidma_init_sg_entry(tx_tfr.sg_list, 0, trans->tx_buf,
+    rc = axidma_init_sg_entry(dev, tx_tfr.sg_list, 0, trans->tx_buf,
                               trans->tx_buf_len);
     if (rc < 0) {
         return rc;
     }
     sg_init_table(rx_tfr.sg_list, rx_tfr.sg_len);
-    rc = axidma_init_sg_entry(rx_tfr.sg_list, 0, trans->rx_buf,
+    rc = axidma_init_sg_entry(dev, rx_tfr.sg_list, 0, trans->rx_buf,
                               trans->rx_buf_len);
     if (rc < 0) {
         return rc;
@@ -576,8 +578,8 @@ int axidma_video_write_transfer(struct axidma_device *dev,
     image_size = trans->width * trans->height * trans->depth;
     for (i = 0; i < tx_tfr.sg_len; i++)
     {
-        rc = axidma_init_sg_entry(tx_tfr.sg_list, i, trans->frame_buffers[i],
-                                  image_size);
+        rc = axidma_init_sg_entry(dev, tx_tfr.sg_list, i,
+                                  trans->frame_buffers[i], image_size);
         if (rc < 0) {
             goto free_sg_list;
         }

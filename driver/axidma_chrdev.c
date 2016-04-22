@@ -11,6 +11,7 @@
  **/
 
 // Kernel dependencies
+#include <linux/list.h>         // Linked list definitions and functions
 #include <linux/sched.h>        // `Current` global variable for current task
 #include <linux/device.h>       // Device and class creation functions
 #include <linux/cdev.h>         // Character device functions
@@ -32,12 +33,13 @@
 // TODO: Maybe this can be improved?
 static struct axidma_device *axidma_dev;
 
-// A struct to store information about each DMA region allocated
-// TODO: Is a reference count required for this?
-struct axidma_vma_data {
-    struct axidma_device *dev;      // The AXI DMA device used
-    void *dma_vaddr;                // The kernel virtual address of the region
-    dma_addr_t dma_addr;            // The DMA address of the region
+// A structure that represents a DMA buffer allocation
+struct axidma_dma_allocation {
+    size_t size;                    // Size of the buffer
+    void *user_addr;                // User virtual address of the buffer
+    void *kern_addr;                // Kernel virtual address of the buffer
+    dma_addr_t dma_addr;            // DMA bus address of the buffer
+    struct list_head list;          // List node pointers for allocation list
 };
 
 /*----------------------------------------------------------------------------
@@ -46,52 +48,45 @@ struct axidma_vma_data {
 
 /* Converts the given user space virtual address to a DMA address. If the
  * conversion is unsuccessful, then (dma_addr_t)NULL is returned. */
-dma_addr_t axidma_uservirt_to_dma(void *user_addr)
+dma_addr_t axidma_uservirt_to_dma(struct axidma_device *dev, void *user_addr,
+                                  size_t size)
 {
-    struct vm_area_struct *vma;
-    struct axidma_vma_data *vma_data;
-    dma_addr_t dma_base_addr;
-    unsigned long offset;
+    struct list_head *iter;
+    struct axidma_dma_allocation *dma_alloc;
+    void *user_start, *user_end, *user_end_addr;
 
-    // Find the VMA structure for the user address
-    vma = find_vma(current->mm, (unsigned long)user_addr);
-    if (vma == NULL) {
-        axidma_err("Unable to find VMA struct for user virtual address %p.\n",
-                   user_addr);
-        return (dma_addr_t)NULL;
+    // Iterate over each DMA buffer to see if the user address falls within
+    list_for_each(iter, &dev->dmabuf_list)
+    {
+        dma_alloc = container_of(iter, struct axidma_dma_allocation, list);
+
+        // Calculate the starting and ending addresses
+        user_start = dma_alloc->user_addr;
+        user_end = (char *)user_start + dma_alloc->size;
+        user_end_addr = (char *)user_addr + size;
+
+        // If the address is in-bounds, then return the DMA address for it
+        if (user_start <= user_addr && user_end_addr <= user_end) {
+            return dma_alloc->dma_addr + (dma_addr_t)(user_addr - user_start);
+        }
     }
 
-    // Get the DMA base address from the VMA structure's data
-    vma_data = vma->vm_private_data;
-    if (vma_data == NULL) {
-        axidma_err("VMA data for user address is not properly initialized.\n");
-        return (dma_addr_t)NULL;
-    }
-    dma_base_addr = vma_data->dma_addr;
-
-    // Compute the offset into the VMA region, and add this to the DMA address
-    offset = (unsigned long)user_addr - vma->vm_start;
-    return dma_base_addr + (dma_addr_t)offset;
+    // No matching allocation was found
+    return (dma_addr_t)NULL;
 }
 
 static void axidma_vma_close(struct vm_area_struct *vma)
 {
-    struct axidma_vma_data *vma_data;
-    struct axidma_device *dev;
-    void *dma_vaddr;
-    dma_addr_t dma_addr;
-    unsigned long alloc_size;
+    struct axidma_dma_allocation *dma_alloc;
 
-    // Get the AXI DMA device and the DMA information from the private data
-    vma_data = vma->vm_private_data;
-    dev = vma_data->dev;
-    dma_vaddr = vma_data->dma_vaddr;
-    dma_addr = vma_data->dma_addr;
-    alloc_size = vma->vm_end - vma->vm_start;
+    // Get the AXI DMA allocation data and free the DMA buffer
+    dma_alloc = vma->vm_private_data;
+    dma_free_coherent(NULL, dma_alloc->size, dma_alloc->kern_addr,
+                      dma_alloc->dma_addr);
 
-    // Free the DMA region and the VMA data struct
-    dma_free_coherent(dev->device, alloc_size, dma_vaddr, dma_addr);
-    kfree(vma_data);
+    // Remove the allocation from the list, and free the structure
+    list_del(&dma_alloc->list);
+    kfree(dma_alloc);
 
     return;
 }
@@ -131,30 +126,30 @@ static int axidma_mmap(struct file *file, struct vm_area_struct *vma)
 {
     int rc;
     struct axidma_device *dev;
-    struct axidma_vma_data *vma_data;
-    dma_addr_t dma_addr;
-    void *dma_vaddr;
-    unsigned long alloc_size;
+    struct axidma_dma_allocation *dma_alloc;
 
     // Get the axidma device structure
     dev = file->private_data;
 
     // Allocate a structure to store data about the DMA mapping
-    vma_data = kmalloc(sizeof(*vma_data), GFP_KERNEL);
-    if (vma_data == NULL) {
+    dma_alloc = kmalloc(sizeof(*dma_alloc), GFP_KERNEL);
+    if (dma_alloc == NULL) {
         axidma_err("Unable to allocate VMA data structure.");
         rc = -ENOMEM;
         goto ret;
     }
 
+    // Set the user virtual address and the size
+    dma_alloc->size = vma->vm_end - vma->vm_start;
+    dma_alloc->user_addr = (void *)vma->vm_start;
+
     // Allocate the requested region a contiguous and uncached for DMA
-    alloc_size = vma->vm_end - vma->vm_start;
     vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
-    dma_vaddr = dma_alloc_coherent(NULL, alloc_size, &dma_addr,
-                                   GFP_KERNEL);
-    if (dma_vaddr == NULL) {
+    dma_alloc->kern_addr = dma_alloc_coherent(NULL, dma_alloc->size,
+                                              &dma_alloc->dma_addr, GFP_KERNEL);
+    if (dma_alloc->kern_addr == NULL) {
         axidma_err("Unable to allocate contiguous DMA memory region of size "
-                   "%lu.\n", alloc_size);
+                   "%zu.\n", dma_alloc->size);
         axidma_err("Please make sure that you specified cma=<size> on the "
                    "kernel command line, and the size is large enough.\n");
         rc = -ENOMEM;
@@ -162,27 +157,29 @@ static int axidma_mmap(struct file *file, struct vm_area_struct *vma)
     }
 
     // Map the region into userspace
-    rc = dma_mmap_coherent(NULL, vma, dma_vaddr, dma_addr, alloc_size);
+    rc = dma_mmap_coherent(NULL, vma, dma_alloc->kern_addr, dma_alloc->dma_addr,
+                           dma_alloc->size);
     if (rc < 0) {
-        axidma_err("Unable to remap address %p to userspace address 0x%08lx, "
-                   "size %lu.\n", dma_vaddr, vma->vm_start, alloc_size);
+        axidma_err("Unable to remap address %p to userspace address %p, size "
+                   "%zu.\n", dma_alloc->kern_addr, dma_alloc->user_addr,
+                   dma_alloc->size);
         goto free_dma_region;
     }
 
     /* Override the VMA close with our call, so that we can free the DMA region
      * when the memory region is closed. Pass in the data to do so. */
-    vma_data->dma_vaddr = dma_vaddr;
-    vma_data->dma_addr = dma_addr;
-    vma_data->dev = dev;
     vma->vm_ops = &axidma_vm_ops;
-    vma->vm_private_data = vma_data;
+    vma->vm_private_data = dma_alloc;
 
+    // Add the allocation to the driver's list of DMA buffers
+    list_add(&dma_alloc->list, &dev->dmabuf_list);
     return 0;
 
 free_dma_region:
-    dma_free_coherent(NULL, alloc_size, dma_vaddr, dma_addr);
+    dma_free_coherent(NULL, dma_alloc->size, dma_alloc->kern_addr,
+                      dma_alloc->dma_addr);
 free_vma_data:
-    kfree(vma_data);
+    kfree(dma_alloc);
 ret:
     return rc;
 }
@@ -398,6 +395,9 @@ int axidma_chrdev_init(struct axidma_device *dev)
         axidma_err("Unable to add a character device.\n");
         goto device_cleanup;
     }
+
+    // Initialize the list for DMA mmap'ed allocations
+    INIT_LIST_HEAD(&dev->dmabuf_list);
 
     return 0;
 

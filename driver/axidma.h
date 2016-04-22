@@ -13,6 +13,7 @@
 #define AXIDMA_H_
 
 // Kernel dependencies
+#include <linux/list.h>         // Linked list definitions and functions
 #include <linux/kernel.h>           // Contains the definition for printk
 #include <linux/device.h>           // Definitions for class and device structs
 #include <linux/cdev.h>             // Definitions for character device structs
@@ -64,6 +65,7 @@ struct axidma_device {
     struct platform_device *pdev;   // The platofrm device from the device tree
     struct axidma_cb_data *cb_data; // The callback data for each channel
     struct axidma_chan *channels;   // All available channels
+    struct list_head dmabuf_list;   // List of allocated DMA buffers
 };
 
 /*----------------------------------------------------------------------------
@@ -106,7 +108,8 @@ int axidma_rw_transfer(struct axidma_device *dev,
 int axidma_video_write_transfer(struct axidma_device *dev,
                                 struct axidma_video_transaction *trans);
 int axidma_stop_channel(struct axidma_device *dev, struct axidma_chan *chan);
-dma_addr_t axidma_uservirt_to_dma(void *user_addr);
+dma_addr_t axidma_uservirt_to_dma(struct axidma_device *dev, void *user_addr,
+                                  size_t size);
 
 /*----------------------------------------------------------------------------
  * Device Tree Definitions
