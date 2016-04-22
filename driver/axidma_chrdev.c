@@ -128,7 +128,7 @@ static int axidma_get_external(struct axidma_device *dev,
     }
 
     // Attach ourselves to the DMA buffer, indicating usage
-    dma_alloc->dma_attach = dma_buf_attach(dma_alloc->dma_buf, NULL);
+    dma_alloc->dma_attach = dma_buf_attach(dma_alloc->dma_buf, dev->device);
     if (IS_ERR(dma_alloc->dma_attach)) {
         axidma_err("Unable to attach to the external DMA buffer.\n");
         rc = PTR_ERR(dma_alloc->dma_attach);
@@ -161,7 +161,7 @@ static int axidma_get_external(struct axidma_device *dev,
 
 unmap_ext_dma:
     dma_buf_unmap_attachment(dma_alloc->dma_attach, dma_alloc->sg_table,
-                            DMA_BIDIRECTIONAL);
+                             DMA_BIDIRECTIONAL);
 detach_ext_dma:
     dma_buf_detach(dma_alloc->dma_buf, dma_alloc->dma_attach);
 put_ext_dma:
