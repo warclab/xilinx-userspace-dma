@@ -22,6 +22,9 @@
 #include <linux/slab.h>         // Kernel allocation functions
 #include <linux/errno.h>        // Linux error codes
 
+#include <linux/dma-buf.h>      // DMA shared buffers interface
+#include <linux/scatterlist.h>  // Scatter-gather table definitions
+
 // Local dependencies
 #include "axidma.h"             // Local definitions
 #include "axidma_ioctl.h"       // IOCTL interface for the device
@@ -35,44 +38,165 @@ static struct axidma_device *axidma_dev;
 
 // A structure that represents a DMA buffer allocation
 struct axidma_dma_allocation {
-    size_t size;                    // Size of the buffer
-    void *user_addr;                // User virtual address of the buffer
-    void *kern_addr;                // Kernel virtual address of the buffer
-    dma_addr_t dma_addr;            // DMA bus address of the buffer
-    struct list_head list;          // List node pointers for allocation list
+    size_t size;                // Size of the buffer
+    void *user_addr;            // User virtual address of the buffer
+    void *kern_addr;            // Kernel virtual address of the buffer
+    dma_addr_t dma_addr;        // DMA bus address of the buffer
+    struct list_head list;      // List node pointers for allocation list
+};
+
+/* A structure that represents a DMA buffer allocation imported from another
+ * driver in the kernel, through the DMA buffer sharing interface. */
+struct axidma_external_allocation {
+    int fd;                                 // File descritpor for buffer share
+    struct dma_buf *dma_buf;                // Structure representing the buffer
+    struct dma_buf_attachment *dma_attach;  // Structre represnting attachment
+    size_t size;                            // Total size of the buffer
+    void *user_addr;                        // Buffer's user virtual address
+    struct sg_table *sg_table;              // DMA scatter-gather table
+    struct list_head list;                  // Node pointers for the list
 };
 
 /*----------------------------------------------------------------------------
  * VMA Operations
  *----------------------------------------------------------------------------*/
 
+static bool valid_dma_request(void *dma_start, size_t dma_size, void *user_addr,
+                              size_t user_size)
+{
+    return dma_start <= user_addr &&
+           (char *)user_addr + user_size <= (char *)dma_start + dma_size;
+}
+
 /* Converts the given user space virtual address to a DMA address. If the
  * conversion is unsuccessful, then (dma_addr_t)NULL is returned. */
 dma_addr_t axidma_uservirt_to_dma(struct axidma_device *dev, void *user_addr,
                                   size_t size)
 {
+    bool valid;
     struct list_head *iter;
     struct axidma_dma_allocation *dma_alloc;
-    void *user_start, *user_end, *user_end_addr;
+    struct axidma_external_allocation *dma_ext_alloc;
 
-    // Iterate over each DMA buffer to see if the user address falls within
+    // First iterate over DMA buffers allocated by this driver
     list_for_each(iter, &dev->dmabuf_list)
     {
         dma_alloc = container_of(iter, struct axidma_dma_allocation, list);
+        valid = valid_dma_request(dma_alloc->user_addr, dma_alloc->size,
+                                  user_addr, size);
+        if (valid) {
+            return dma_alloc->dma_addr;
+        }
+    }
 
-        // Calculate the starting and ending addresses
-        user_start = dma_alloc->user_addr;
-        user_end = (char *)user_start + dma_alloc->size;
-        user_end_addr = (char *)user_addr + size;
-
-        // If the address is in-bounds, then return the DMA address for it
-        if (user_start <= user_addr && user_end_addr <= user_end) {
-            return dma_alloc->dma_addr + (dma_addr_t)(user_addr - user_start);
+    // Otherwise, iterate over the DMA buffers allocated by other drivers
+    list_for_each(iter, &dev->external_dmabufs)
+    {
+        dma_ext_alloc = container_of(iter, struct axidma_external_allocation,
+                                     list);
+        valid = valid_dma_request(dma_ext_alloc->user_addr, dma_ext_alloc->size,
+                                  user_addr, size);
+        if (valid) {
+            return sg_dma_address(&dma_ext_alloc->sg_table->sgl[0]);
         }
     }
 
     // No matching allocation was found
     return (dma_addr_t)NULL;
+}
+
+static int axidma_get_external(struct axidma_device *dev,
+                               struct axidma_register_buffer *ext_buf)
+{
+    int rc;
+    struct axidma_external_allocation *dma_alloc;
+
+    // Allocate a structure to store information about the external buffer
+    dma_alloc = kmalloc(sizeof(*dma_alloc), GFP_KERNEL);
+    if (dma_alloc == NULL) {
+        axidma_err("Unable to allocate external DMA allocation structure.\n");
+        return -ENOMEM;
+    }
+
+    // Get the DMA buffer corresponding to the anonymous file descriptor
+    dma_alloc->fd = ext_buf->fd;
+    dma_alloc->dma_buf = dma_buf_get(ext_buf->fd);
+    if (IS_ERR(dma_alloc->dma_buf)) {
+        axidma_err("Unable to find the external DMA buffer.\n");
+        rc = PTR_ERR(dma_alloc->dma_buf);
+        goto free_ext_alloc;
+    }
+
+    // Attach ourselves to the DMA buffer, indicating usage
+    dma_alloc->dma_attach = dma_buf_attach(dma_alloc->dma_buf, NULL);
+    if (IS_ERR(dma_alloc->dma_attach)) {
+        axidma_err("Unable to attach to the external DMA buffer.\n");
+        rc = PTR_ERR(dma_alloc->dma_attach);
+        goto put_ext_dma;
+    }
+
+    // TODO: Maybe this should only be done on-demand
+    // Map the DMA buffer for the life of our attachment
+    dma_alloc->sg_table = dma_buf_map_attachment(dma_alloc->dma_attach,
+                                                 DMA_BIDIRECTIONAL);
+    if (IS_ERR(dma_alloc->sg_table)) {
+        axidma_err("Unable to map external DMA buffer for usage.\n");
+        rc = PTR_ERR(dma_alloc->sg_table);
+        goto detach_ext_dma;
+    }
+
+    // The allocation is expected to be one contiguous memory region
+    if (dma_alloc->sg_table->nents != 1) {
+        axidma_err("External DMA allocations must a single contiguous region "
+                   "of physical memory.\n");
+        rc = -EINVAL;
+        goto unmap_ext_dma;
+    }
+
+    // Add ourselves the driver's list of external allocations
+    dma_alloc->size = ext_buf->size;
+    dma_alloc->user_addr = ext_buf->user_addr;
+    list_add(&dma_alloc->list, &dev->external_dmabufs);
+    return 0;
+
+unmap_ext_dma:
+    dma_buf_unmap_attachment(dma_alloc->dma_attach, dma_alloc->sg_table,
+                            DMA_BIDIRECTIONAL);
+detach_ext_dma:
+    dma_buf_detach(dma_alloc->dma_buf, dma_alloc->dma_attach);
+put_ext_dma:
+    dma_buf_put(dma_alloc->dma_buf);
+free_ext_alloc:
+    kfree(dma_alloc);
+    return rc;
+}
+
+static int axidma_put_external(struct axidma_device *dev, void *user_addr)
+{
+    void *end_user_addr;
+    struct list_head *iter;
+    struct axidma_external_allocation *dma_alloc;
+
+    // Find the allocation corresponding to the user address
+    list_for_each(iter, &dev->external_dmabufs)
+    {
+        dma_alloc = container_of(iter, struct axidma_external_allocation, list);
+        end_user_addr = (char *)dma_alloc->user_addr + dma_alloc->size;
+
+        if (dma_alloc->user_addr <= user_addr && user_addr <= end_user_addr) {
+            // Unmap the buffer, and detach ourselves from it
+            dma_buf_unmap_attachment(dma_alloc->dma_attach,
+                    dma_alloc->sg_table, DMA_BIDIRECTIONAL);
+            dma_buf_detach(dma_alloc->dma_buf, dma_alloc->dma_attach);
+            dma_buf_put(dma_alloc->dma_buf);
+
+            // Free the allocation structure
+            kfree(dma_alloc);
+            return 0;
+        }
+    }
+
+    return -ENOENT;
 }
 
 static void axidma_vma_close(struct vm_area_struct *vma)
@@ -210,6 +334,7 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
     struct axidma_device *dev;
     struct axidma_num_channels num_chans;
     struct axidma_channel_info usr_chans, kern_chans;
+    struct axidma_register_buffer ext_buf;
     struct axidma_transaction trans;
     struct axidma_inout_transaction inout_trans;
     struct axidma_video_transaction video_trans;
@@ -277,6 +402,14 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             rc = axidma_set_signal(dev, arg);
             break;
 
+        case AXIDMA_REGISTER_BUFFER:
+            if (copy_from_user(&ext_buf, arg_ptr, sizeof(ext_buf)) != 0) {
+                axidma_err("Unable to copy external buffer info from userspace "
+                           "for AXIDMA_REGISTER_BUFFER.\n");
+                return -EFAULT;
+            }
+            rc = axidma_get_external(dev, &ext_buf);
+            break;
 
         case AXIDMA_DMA_READ:
             if (copy_from_user(&trans, arg_ptr, sizeof(trans)) != 0) {
@@ -332,6 +465,10 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
                            "AXIDMA_STOP_DMA_CHANNEL.\n");
             }
             rc = axidma_stop_channel(dev, &chan_info);
+            break;
+
+        case AXIDMA_UNREGISTER_BUFFER:
+            rc = axidma_put_external(dev, (void *)arg);
             break;
 
         // Invalid command (already handled in preamble)
@@ -398,6 +535,7 @@ int axidma_chrdev_init(struct axidma_device *dev)
 
     // Initialize the list for DMA mmap'ed allocations
     INIT_LIST_HEAD(&dev->dmabuf_list);
+    INIT_LIST_HEAD(&dev->external_dmabufs);
 
     return 0;
 

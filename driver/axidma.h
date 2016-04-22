@@ -66,6 +66,7 @@ struct axidma_device {
     struct axidma_cb_data *cb_data; // The callback data for each channel
     struct axidma_chan *channels;   // All available channels
     struct list_head dmabuf_list;   // List of allocated DMA buffers
+    struct list_head external_dmabufs;  // Buffers allocated in other drivers
 };
 
 /*----------------------------------------------------------------------------

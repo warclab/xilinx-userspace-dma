@@ -64,6 +64,12 @@ struct axidma_channel_info {
     struct axidma_chan *channels;   // Metadata about all available channels
 };
 
+struct axidma_register_buffer {
+    int fd;                         // Anonymous file descritpor for DMA buffer
+    size_t size;                    // The size of the external DMA buffer
+    void *user_addr;                // User virtual address of the buffer
+};
+
 struct axidma_transaction {
     bool wait;                      // Indicates if the call is blocking
     int channel_id;                 // The id of the DMA channel to use
@@ -165,6 +171,31 @@ struct axidma_video_transaction {
 #define AXIDMA_SET_DMA_SIGNAL           _IO(AXIDMA_IOCTL_MAGIC, 2)
 
 /**
+ * Registers the external DMA buffer with the driver, making it available to be
+ * used in DMA transfers.
+ *
+ * Sometimes, it may be useful to use a DMA buffer that was allocated by another
+ * driver. The best example of this is if you want to interact with a
+ * frame buffer allocated by a DRM driver.
+ *
+ * However, the driver cannot simply access this DMA buffer as is. The user must
+ * register the buffer with the driver, so that it can get the information from
+ * the driver that originally allocated it.
+ *
+ * This uses the kernel's DMA buffer sharing API. Thus, the user must first tell
+ * the other driver to export the DMA buffer for sharing, typically done through
+ * an IOCTL. This will return a file descriptor, which the user must pass into
+ * this function, along with the virtual address in userspace.
+ *
+ * Inputs:
+ *  - fd - File descriptor corresponding to the DMA buffer share.
+ *  - size - The size of the DMA buffer in bytes.
+ *  - user_addr - The user virtual address of the buffer.
+ **/
+#define AXIDMA_REGISTER_BUFFER          _IOR(AXIDMA_IOCTL_MAGIC, 3, \
+                                             struct axidma_register_buffer)
+
+/**
  * Receives the data from the logic fabric into the processing system.
  *
  * This function receives data from a device on the PL fabric through
@@ -182,7 +213,7 @@ struct axidma_video_transaction {
  *  - buf - The address of the buffer you want to receive the data in.
  *  - buf_len - The number of bytes to receive.
  **/
-#define AXIDMA_DMA_READ                 _IOR(AXIDMA_IOCTL_MAGIC, 3, \
+#define AXIDMA_DMA_READ                 _IOR(AXIDMA_IOCTL_MAGIC, 4, \
                                              struct axidma_transaction)
 
 /**
@@ -203,7 +234,7 @@ struct axidma_video_transaction {
  *  - buf - The address of the data you want to send.
  *  - buf_len - The number of bytes to send.
  **/
-#define AXIDMA_DMA_WRITE                _IOR(AXIDMA_IOCTL_MAGIC, 4, \
+#define AXIDMA_DMA_WRITE                _IOR(AXIDMA_IOCTL_MAGIC, 5, \
                                              struct axidma_transaction)
 
 /**
@@ -228,7 +259,7 @@ struct axidma_video_transaction {
  *  - rx_buf - The address of the buffer you want to receive data in.
  *  - rx_buf_len - The number of bytes you want to receive.
  **/
-#define AXIDMA_DMA_READWRITE            _IOR(AXIDMA_IOCTL_MAGIC, 5, \
+#define AXIDMA_DMA_READWRITE            _IOR(AXIDMA_IOCTL_MAGIC, 6, \
                                              struct axidma_inout_transaction)
 
 /**
@@ -256,7 +287,7 @@ struct axidma_video_transaction {
  *  - height - The height of the frame in lines.
  *  - depth - The size of each pixel in the frame in bytes.
  **/
-#define AXIDMA_DMA_VIDEO_WRITE          _IOR(AXIDMA_IOCTL_MAGIC, 6, \
+#define AXIDMA_DMA_VIDEO_WRITE          _IOR(AXIDMA_IOCTL_MAGIC, 7, \
                                              struct axidma_video_transaction)
 
 /**
@@ -272,7 +303,21 @@ struct axidma_video_transaction {
  *  - channel_id - The integer id for the channel.
  *  - chan - This field is unused an can be safely left uninitialized.
  */
-#define AXIDMA_STOP_DMA_CHANNEL         _IOR(AXIDMA_IOCTL_MAGIC, 7, \
+#define AXIDMA_STOP_DMA_CHANNEL         _IOR(AXIDMA_IOCTL_MAGIC, 8, \
                                              struct axidma_chan)
+
+/**
+ * Unregisters and external DMA buffer previously registered through an
+ * AXIDMA_REGISTER_BUFFER IOCTL
+ *
+ * All external buffers that are registered by the user must be freed in order
+ * to ensure that all kernel data structures are properly cleaned up. This
+ * removes the external DMA buffer from the driver, so it can no longer be
+ * used in DMA transfers after this call.
+ *
+ * Inputs:
+ *  - user_addr - The user virtual address of the external DMA buffer.
+ **/
+#define AXIDMA_UNREGISTER_BUFFER        _IO(AXIDMA_IOCTL_MAGIC, 9)
 
 #endif /* AXIDMA_IOCTL_H_ */
