@@ -129,12 +129,12 @@ static int axidma_release(struct inode *inode, struct file *file)
 
 static int axidma_mmap(struct file *file, struct vm_area_struct *vma)
 {
+    int rc;
     struct axidma_device *dev;
     struct axidma_vma_data *vma_data;
     dma_addr_t dma_addr;
     void *dma_vaddr;
-    unsigned long alloc_size, dma_pfn;
-    int rc;
+    unsigned long alloc_size;
 
     // Get the axidma device structure
     dev = file->private_data;
@@ -170,9 +170,8 @@ static int axidma_mmap(struct file *file, struct vm_area_struct *vma)
     vma->vm_private_data = vma_data;
 
     // Map the region into userspace
-    dma_pfn = __phys_to_pfn(virt_to_phys(dma_vaddr));
-    rc = remap_pfn_range(vma, vma->vm_start, dma_pfn, alloc_size,
-                         vma->vm_page_prot);
+    rc = remap_pfn_range(vma, vma->vm_start, vmalloc_to_pfn(dma_vaddr),
+                         alloc_size, vma->vm_page_prot);
     if (rc < 0) {
         axidma_err("Unable to remap address %p to userspace address 0x%08lx, "
                    "size %lu.\n", dma_vaddr, vma->vm_start, alloc_size);
