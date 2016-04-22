@@ -30,6 +30,9 @@ int *axidma_get_dma_tx(axidma_dev_t dev, int *num_channels);
 int *axidma_get_dma_rx(axidma_dev_t dev, int *num_channels);
 void *axidma_malloc(axidma_dev_t dev, size_t size);
 void axidma_free(axidma_dev_t dev, void *addr, size_t size);
+int axidma_register_buffer(axidma_dev_t dev, int dmabuf_fd, void *user_addr,
+                           size_t size);
+void axidma_unregister_buffer(axidma_dev_t dev, void *user_addr);
 void axidma_set_callback(axidma_dev_t dev, int channel, axidma_cb_t callback,
                         void *data);
 int axidma_oneway_transfer(axidma_dev_t dev, enum axidma_dir dir, int channel,

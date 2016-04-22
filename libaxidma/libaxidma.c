@@ -182,6 +182,46 @@ void axidma_set_callback(axidma_dev_t dev, int channel, axidma_cb_t callback,
     return;
 }
 
+/* Registers a DMA buffer allocated by another driver with the AXI DMA driver.
+ * This allows it to be used in DMA transfers later on. The user must make sure
+ * that the driver that allocated the buffer has exported it. The file
+ * descriptor is the one that is returned by the other driver's export. */
+int axidma_register_buffer(axidma_dev_t dev, int dmabuf_fd, void *user_addr,
+                           size_t size)
+{
+    int rc;
+    struct axidma_register_buffer register_buffer;
+
+    // Setup the argument structure to the IOCTL
+    register_buffer.fd = dmabuf_fd;
+    register_buffer.size = size;
+    register_buffer.user_addr = user_addr;
+
+    // Perform the buffer registration with the driver
+    rc = ioctl(dev->fd, AXIDMA_REGISTER_BUFFER, &register_buffer);
+    if (rc < 0) {
+        perror("Failed to register the external DMA buffer");
+    }
+
+    return rc;
+}
+
+/* Unregisters a DMA buffer preivously registered with the driver. This is
+ * required to clean up the kernel data structures. */
+void axidma_unregister_buffer(axidma_dev_t dev, void *user_addr)
+{
+    int rc;
+
+    // Perform the deregistration with the driver
+    rc = ioctl(dev->fd, AXIDMA_UNREGISTER_BUFFER, user_addr);
+    if (rc < 0) {
+        perror("Failed to unregister the external DMA buffer");
+        assert(false);
+    }
+
+    return;
+}
+
 
 /* This performs a one-way transfer over AXI DMA, the direction being specified
  * by the user. The user determines if this is blocking or not with `wait. */
