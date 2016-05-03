@@ -92,6 +92,20 @@ void axidma_setup_vdma_config(struct xilinx_vdma_config *dma_config, int width,
     return;
 }
 
+/* Reserve the given channel corresponding to the AXI DMA channel structure. In
+ * 4.x, the reservation now goes through the device tree, instead of match. */
+static inline
+struct dma_chan *axidma_reserve_channel(struct platform_device *pdev,
+                                        struct axidma_chan *axidma_chan)
+{
+    struct dma_chan *chan;
+
+    // Silence the compiler, in case this function is not used
+    (void)axidma_reserve_channel;
+
+    chan = dma_request_slave_channel(&pdev->dev, axidma_chan->name);
+    return (chan == NULL) ? ERR_PTR(-ENODEV) : chan;
+}
 /*----------------------------------------------------------------------------
  * Linux 3.x Compatibility
  *----------------------------------------------------------------------------*/
@@ -141,6 +155,64 @@ void axidma_setup_vdma_config(struct xilinx_vdma_config *dma_config, int width,
     dma_config->reset = 0;              // Don't reset the channel
     dma_config->ext_fsync = 0;          // VDMA handles synchronizes itself
     return;
+}
+
+
+// Converts the AXI DMA type to its corresponding Xilinx type
+static int axidma_to_xilinx_type(enum axidma_type dma_type)
+{
+    BUG_ON(dma_type != AXIDMA_DMA && dma_type != AXIDMA_VDMA);
+    return (dma_type == AXIDMA_DMA) ? XILINX_DMA_IP_DMA : XILINX_DMA_IP_VDMA;
+}
+
+// The filter function used to match channels for `dma_request_channel`
+static inline
+bool axidma_dmadev_filter(struct dma_chan *chan, void *match)
+{
+    // Silence the compiler, in case this function is not used
+    (void)axidma_dmadev_filter;
+
+    return *(int *)chan->private == (int)match;
+}
+
+static inline
+int pack_dma_match(int channel_id, enum axidma_type dma_type,
+                   enum axidma_dir dma_dir)
+{
+    int chan_type;
+    enum dma_transfer_direction chan_dir;
+
+    // Silence the compiler, in case this function is not used
+    (void)pack_dma_match;
+
+    chan_type = axidma_to_xilinx_type(dma_type);
+    chan_dir  = axidma_to_dma_dir(dma_dir);
+    return (channel_id << XILINX_DMA_DEVICE_ID_SHIFT) | (chan_dir & 0xFF) |
+           chan_type;
+}
+
+// Request the DMA channel that matches the info in the AXI DMA structure
+static inline
+struct dma_chan *axidma_reserve_channel(struct platform_device *pdev,
+                                        struct axidma_chan *axidma_chan)
+{
+    int match;
+    dma_cap_mask_t dma_mask;
+    struct dma_chan *chan;
+
+    // Silence the compiler, in case this function is not used
+    (void)axidma_reserve_channel;
+
+    // Create a capability mask to match against for the DMA
+    dma_cap_zero(dma_mask);
+    dma_cap_set(DMA_SLAVE | DMA_PRIVATE, dma_mask);
+
+    // Create the match structure, and request the matching channel
+    match = pack_dma_match(axidma_chan->channel_id, axidma_chan->type,
+                                   axidma_chan->dir);
+    chan = dma_request_channel(dma_mask, axidma_dmadev_filter, (void *)match);
+
+    return (chan == NULL) ? ERR_PTR(-ENODEV) : chan;
 }
 
 #else

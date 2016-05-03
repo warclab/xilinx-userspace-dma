@@ -609,10 +609,10 @@ static int axidma_request_channels(struct platform_device *pdev,
     for (i = 0; i < dev->num_chans; i++)
     {
         chan = &dev->channels[i];
-        chan->chan = dma_request_slave_channel(&pdev->dev, chan->name);
-        if (IS_ERR(chan->chan) || chan->chan == NULL) {
+        chan->chan = axidma_reserve_channel(pdev, chan);
+        if (IS_ERR(chan->chan)) {
             axidma_err("Unable to get slave channel %d: %s.\n", i, chan->name);
-            rc = (chan == NULL) ? -ENODEV : PTR_ERR(chan);
+            rc = PTR_ERR(chan);
             goto release_channels;
         }
         num_reserved_chans += 1;
