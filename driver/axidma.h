@@ -23,7 +23,6 @@
 
 // Local dependencies
 #include "axidma_ioctl.h"           // IOCTL argument structures
-#include "version_portability.h"    // Deals with 3.x versus 4.x Linux
 
 /*----------------------------------------------------------------------------
  * Module Definitions

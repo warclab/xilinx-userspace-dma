@@ -36,11 +36,6 @@
 // The skip destination unmap DMA control option was removed in 4.x
 #define DMA_COMPL_SKIP_DEST_UNMAP   0
 
-/* In Linux 4.x, DMA devices now have dedicated functions for terminating
- * outstanding requests and configuring a DMA channel. */
-#define dma_terminate_all(dma_dev, dma_chan) \
-    ((dma_dev)->device_terminate_all(dma_chan))
-
 /* Setup the config structure for VDMA. In 4.x, the VDMA config no longer has
  * vsize, hsize, and stride fields. */
 static inline
@@ -71,11 +66,6 @@ void axidma_setup_vdma_config(struct xilinx_vdma_config *dma_config, int width,
 
 #include <linux/amba/xilinx_dma.h>  // Xilinx DMA config structures
 #include <linux/dmaengine.h>        // Definitions for DMA structures and types
-
-/* In Linux 3.x, DMA devices have a "device_control" function for sending
- * commands to DMA channels (e.g. configuring them or terminating). */
-#define dma_terminate_all(dma_dev, dma_chan) \
-    ((dma_dev)->device_control(dma_chan, DMA_TERMINATE_ALL, 0))
 
 // Setup the config structure for VDMA
 static inline

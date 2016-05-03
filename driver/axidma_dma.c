@@ -271,7 +271,7 @@ static int axidma_prep_transfer(struct axidma_chan *axidma_chan,
     return 0;
 
 stop_dma:
-    dma_terminate_all(dma_dev, chan);
+    dmaengine_terminate_all(chan);
     return rc;
 }
 
@@ -315,7 +315,7 @@ static int axidma_start_transfer(struct axidma_chan *chan,
     return 0;
 
 stop_dma:
-    dma_terminate_all(chan->chan->device, chan->chan);
+    dmaengine_terminate_all(chan->chan);
     return rc;
 }
 
@@ -627,7 +627,7 @@ int axidma_stop_channel(struct axidma_device *dev,
     }
 
     // Terminate all DMA transactions on the given channel
-    return dma_terminate_all(chan->chan->device, chan->chan);
+    return dmaengine_terminate_all(chan->chan);
 }
 
 /*----------------------------------------------------------------------------
@@ -736,7 +736,7 @@ void axidma_dma_exit(struct axidma_device *dev)
     for (i = 0; i < dev->num_chans; i++)
     {
         chan = dev->channels[i].chan;
-        dma_terminate_all(chan->device, chan);
+        dmaengine_terminate_all(chan);
         dma_release_channel(chan);
     }
 
