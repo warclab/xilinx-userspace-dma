@@ -49,6 +49,7 @@ struct axidma_chan {
     enum axidma_dir dir;            // The DMA direction of the channel
     enum axidma_type type;          // The DMA type of the channel
     int channel_id;                 // The identifier for the device
+    const char *name;               // Name of the channel (ignore)
     struct dma_chan *chan;          // The DMA channel (ignore)
 };
 

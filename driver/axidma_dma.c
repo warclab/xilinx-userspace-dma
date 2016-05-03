@@ -629,27 +629,19 @@ static int axidma_request_channels(struct platform_device *pdev,
 {
     int rc, i;
     int num_reserved_chans;
-    const char *dma_name;
-    struct dma_chan *chan;
+    struct axidma_chan *chan;
 
     // For each channel, request exclusive access to the channel
     num_reserved_chans = 0;
     for (i = 0; i < dev->num_chans; i++)
     {
-        // Get the name of the DMA channel
-        rc = axidma_of_parse_dma_name(pdev, i, &dma_name);
-        if (rc < 0) {
-            goto release_channels;
-        }
-
-        // Request exclusive access to the given DMA channel
-        chan = dma_request_slave_channel(&pdev->dev, dma_name);
-        if (IS_ERR(chan) || chan == NULL) {
-            axidma_err("Unable to get slave channel %d: %s.\n", i, dma_name);
+        chan = &dev->channels[i];
+        chan->chan = dma_request_slave_channel(&pdev->dev, chan->name);
+        if (IS_ERR(chan->chan) || chan->chan == NULL) {
+            axidma_err("Unable to get slave channel %d: %s.\n", i, chan->name);
             rc = (chan == NULL) ? -ENODEV : PTR_ERR(chan);
             goto release_channels;
         }
-        dev->channels[i].chan = chan;
         num_reserved_chans += 1;
     }
 

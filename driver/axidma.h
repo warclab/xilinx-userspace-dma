@@ -123,8 +123,5 @@ dma_addr_t axidma_uservirt_to_dma(struct axidma_device *dev, void *user_addr,
 int axidma_of_num_channels(struct platform_device *pdev);
 int axidma_of_parse_dma_nodes(struct platform_device *pdev,
                               struct axidma_device *dev);
-int axidma_of_parse_dma_name(struct platform_device *pdev, int index,
-                             const char **dma_name);
-
 
 #endif /* AXIDMA_H_ */

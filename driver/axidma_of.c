@@ -61,6 +61,23 @@ static int axidma_parse_compatible_property(struct device_node *dma_chan_node,
     return 0;
 }
 
+static int axidma_of_parse_dma_name(struct device_node *driver_node, int index,
+                                    struct axidma_chan *chan)
+{
+    int rc;
+
+    // Parse the index'th dma name from the 'dma-names' property
+    rc = of_property_read_string_index(driver_node, "dma-names", index,
+                                       &chan->name);
+    if (rc < 0) {
+        axidma_node_err(driver_node, "Unable to read DMA name %d from the "
+                        "'dma-names' property.\n", index);
+        return -EINVAL;
+    }
+
+    return 0;
+}
+
 static int axidma_of_parse_channel(struct device_node *dma_node, int channel,
         struct axidma_chan *chan, struct axidma_device *dev)
 {
@@ -227,29 +244,14 @@ int axidma_of_parse_dma_nodes(struct platform_device *pdev,
         if (rc < 0) {
             return rc;
         }
+
+        // Parse the name of the channel
+        rc = axidma_of_parse_dma_name(driver_node, i, &dev->channels[i]);
+        if (rc < 0) {
+            return rc;
+        }
     }
 
     // Check that all channels have unique channel ID's
     return axidma_check_unique_ids(dev);
-}
-
-int axidma_of_parse_dma_name(struct platform_device *pdev, int index,
-                             const char **dma_name)
-{
-    int rc;
-    struct device_node *driver_node;
-
-    // Get the device tree node for the driver
-    driver_node = pdev->dev.of_node;
-
-    // Parse the index'th dma name from the 'dma-names' property
-    rc = of_property_read_string_index(driver_node, "dma-names", index,
-                                       dma_name);
-    if (rc < 0) {
-        axidma_node_err(driver_node, "Unable to read DMA name %d from the "
-                        "'dma-names' property.\n", index);
-        return -EINVAL;
-    }
-
-    return 0;
 }
