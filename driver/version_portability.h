@@ -16,9 +16,16 @@
 
 #include <linux/version.h>          // Linux version macros
 
-/* Handle different versions of linux (mainly DMA definition updates from 3.x to
- * 4.x, such as the header file location moving. */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,0,0)
+/*----------------------------------------------------------------------------
+ * Linux 4.x Compatbility
+ *----------------------------------------------------------------------------*/
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,0,0)
+
+#warning("This driver only supports Linux 3.x and 4.x versions. Linux 5.x " \
+          "version and greater is untested")
+
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4,0,0)
 
 #include <linux/dma/xilinx_dma.h>   // Xilinx DMA config structures (diff path)
 #include <linux/dmaengine.h>        // Definitions for DMA structures and types
@@ -56,7 +63,11 @@ void axidma_setup_vdma_config(struct xilinx_vdma_config *dma_config, int width,
     return;
 }
 
-#else
+/*----------------------------------------------------------------------------
+ * Linux 3.x Compatibility
+ *----------------------------------------------------------------------------*/
+
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0)
 
 #include <linux/amba/xilinx_dma.h>  // Xilinx DMA config structures
 #include <linux/dmaengine.h>        // Definitions for DMA structures and types
@@ -90,6 +101,11 @@ void axidma_setup_vdma_config(struct xilinx_vdma_config *dma_config, int width,
     return;
 }
 
-#endif
+#else
+
+#error("This driver only supports Linux 3.x and 4.x versions. Linux 2.x " \
+       "version and lower is untested.")
+
+#endif /* LINUX_VERSION_CODE */
 
 #endif /* VERSION_PORTABILITY_H_ */
