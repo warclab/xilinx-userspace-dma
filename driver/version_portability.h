@@ -17,13 +17,28 @@
 #include <linux/version.h>          // Linux version macros
 
 /*----------------------------------------------------------------------------
+ * Common Functions
+ *----------------------------------------------------------------------------*/
+
+// Convert the AXI DMA direction enumeration to a DMA direction enumeration
+static inline
+enum dma_transfer_direction axidma_to_dma_dir(enum axidma_dir dma_dir)
+{
+    // Silence the compiler, in case this function is not used
+    (void)axidma_to_dma_dir;
+
+    BUG_ON(dma_dir != AXIDMA_WRITE && dma_dir != AXIDMA_READ);
+    return (dma_dir == AXIDMA_WRITE) ? DMA_MEM_TO_DEV : DMA_DEV_TO_MEM;
+}
+
+/*----------------------------------------------------------------------------
  * Linux 4.x Compatbility
  *----------------------------------------------------------------------------*/
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,0,0)
 
 #warning("This driver only supports Linux 3.x and 4.x versions. Linux 5.x " \
-          "version and greater is untested")
+         "and greater versions are untested")
 
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(4,0,0)
 
@@ -46,7 +61,7 @@ struct xilinx_dma_config {
  * removed, so we can safely just set it to zero here. */
 static inline
 void axidma_setup_dma_config(struct xilinx_dma_config *dma_config,
-                             enum dma_transfer_direction direction)
+                             struct axidma_chan *chan)
 {
     // Silence the compiler, in case this function is not used
     (void)axidma_setup_dma_config;
@@ -89,11 +104,14 @@ void axidma_setup_vdma_config(struct xilinx_vdma_config *dma_config, int width,
 // Setup the config structure for DMA
 static inline
 void axidma_setup_dma_config(struct xilinx_dma_config *dma_config,
-                             enum dma_transfer_direction direction)
+                             struct axidma_chan *chan)
 {
+    enum dma_transfer_direction direction;
+
     // Silence the compiler, in case this function is not used
     (void)axidma_setup_dma_config;
 
+    direction = axidma_to_dma_dir(chan->dir);
     dma_config->direction = direction;  // Either to memory or from memory
     dma_config->coalesc = 1;            // Interrupt for one transfer completion
     dma_config->delay = 0;              // Disable the delay counter interrupt
@@ -128,7 +146,7 @@ void axidma_setup_vdma_config(struct xilinx_vdma_config *dma_config, int width,
 #else
 
 #error("This driver only supports Linux 3.x and 4.x versions. Linux 2.x " \
-       "version and lower is untested.")
+       "and lower versions are untested.")
 
 #endif /* LINUX_VERSION_CODE */
 

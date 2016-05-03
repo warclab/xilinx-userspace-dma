@@ -69,43 +69,16 @@ struct axidma_cb_data {
  * Enumeration Conversions
  *----------------------------------------------------------------------------*/
 
-static enum dma_transfer_direction axidma_to_dma_dir(enum axidma_dir dma_dir)
-{
-    switch (dma_dir) {
-        case AXIDMA_WRITE:
-            return DMA_MEM_TO_DEV;
-        case AXIDMA_READ:
-            return DMA_DEV_TO_MEM;
-    }
-
-    BUG_ON("Invalid AXI DMA direction found.\n");
-    return -1;
-}
-
 static char *axidma_dir_to_string(enum axidma_dir dma_dir)
 {
-    switch (dma_dir) {
-        case AXIDMA_WRITE:
-            return "transmit";
-        case AXIDMA_READ:
-            return "receive";
-    }
-
-    BUG_ON("Invalid AXI DMA direction found.\n");
-    return NULL;
+    BUG_ON(dma_dir != AXIDMA_WRITE && dma_dir != AXIDMA_READ);
+    return (dma_dir == AXIDMA_WRITE) ? "transmit" : "receive";
 }
 
 static char *axidma_type_to_string(enum axidma_type dma_type)
 {
-    switch (dma_type) {
-        case AXIDMA_DMA:
-            return "DMA";
-        case AXIDMA_VDMA:
-            return "VDMA";
-    }
-
-    BUG_ON("Invalid AXI DMA type found.\n");
-    return NULL;
+    BUG_ON(dma_type != AXIDMA_DMA && dma_type != AXIDMA_VDMA);
+    return (dma_type == AXIDMA_DMA) ? "DMA" : "VDMA";
 }
 
 /*----------------------------------------------------------------------------
@@ -202,7 +175,7 @@ static int axidma_prep_transfer(struct axidma_chan *axidma_chan,
 
     // Setup the configuration structure based on whether it's DMA or VDMA
     if (dma_tfr->type == AXIDMA_DMA) {
-        axidma_setup_dma_config(&dma_config, dma_dir);
+        axidma_setup_dma_config(&dma_config, axidma_chan);
         config = &dma_config;
     } else if (dma_tfr->type == AXIDMA_VDMA) {
         axidma_setup_vdma_config(&vdma_config, dma_tfr->vdma_tfr.width,
