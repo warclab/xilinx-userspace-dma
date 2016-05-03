@@ -24,9 +24,6 @@
 static inline
 enum dma_transfer_direction axidma_to_dma_dir(enum axidma_dir dma_dir)
 {
-    // Silence the compiler, in case this function is not used
-    (void)axidma_to_dma_dir;
-
     BUG_ON(dma_dir != AXIDMA_WRITE && dma_dir != AXIDMA_READ);
     return (dma_dir == AXIDMA_WRITE) ? DMA_MEM_TO_DEV : DMA_DEV_TO_MEM;
 }
@@ -63,9 +60,6 @@ static inline
 void axidma_setup_dma_config(struct xilinx_dma_config *dma_config,
                              struct axidma_chan *chan)
 {
-    // Silence the compiler, in case this function is not used
-    (void)axidma_setup_dma_config;
-
     dma_config->dummy = 0;
     return;
 }
@@ -76,9 +70,6 @@ static inline
 void axidma_setup_vdma_config(struct xilinx_vdma_config *dma_config, int width,
                               int height, int depth)
 {
-    // Silence the compiler, in case this function is not used
-    (void)axidma_setup_vdma_config;
-
     dma_config->frm_dly = 0;            // Number of frames to delay
     dma_config->gen_lock = 0;           // No genlock, VDMA runs freely
     dma_config->master = 0;             // VDMA is the genlock master
@@ -100,9 +91,6 @@ struct dma_chan *axidma_reserve_channel(struct platform_device *pdev,
 {
     struct dma_chan *chan;
 
-    // Silence the compiler, in case this function is not used
-    (void)axidma_reserve_channel;
-
     chan = dma_request_slave_channel(&pdev->dev, axidma_chan->name);
     return (chan == NULL) ? ERR_PTR(-ENODEV) : chan;
 }
@@ -122,9 +110,6 @@ void axidma_setup_dma_config(struct xilinx_dma_config *dma_config,
 {
     enum dma_transfer_direction direction;
 
-    // Silence the compiler, in case this function is not used
-    (void)axidma_setup_dma_config;
-
     direction = axidma_to_dma_dir(chan->dir);
     dma_config->direction = direction;  // Either to memory or from memory
     dma_config->coalesc = 1;            // Interrupt for one transfer completion
@@ -138,9 +123,6 @@ static inline
 void axidma_setup_vdma_config(struct xilinx_vdma_config *dma_config, int width,
                               int height, int depth)
 {
-    // Silence the compiler, in case this function is not used
-    (void)axidma_setup_vdma_config;
-
     dma_config->vsize = height;         // Height of the image (in lines)
     dma_config->hsize = width * depth;  // Width of the image (in bytes)
     dma_config->stride = width * depth; // Number of bytes to process per line
@@ -169,9 +151,6 @@ static int axidma_to_xilinx_type(enum axidma_type dma_type)
 static inline
 bool axidma_dmadev_filter(struct dma_chan *chan, void *match)
 {
-    // Silence the compiler, in case this function is not used
-    (void)axidma_dmadev_filter;
-
     return *(int *)chan->private == (int)match;
 }
 
@@ -181,9 +160,6 @@ int pack_dma_match(int channel_id, enum axidma_type dma_type,
 {
     int chan_type;
     enum dma_transfer_direction chan_dir;
-
-    // Silence the compiler, in case this function is not used
-    (void)pack_dma_match;
 
     chan_type = axidma_to_xilinx_type(dma_type);
     chan_dir  = axidma_to_dma_dir(dma_dir);
@@ -199,9 +175,6 @@ struct dma_chan *axidma_reserve_channel(struct platform_device *pdev,
     int match;
     dma_cap_mask_t dma_mask;
     struct dma_chan *chan;
-
-    // Silence the compiler, in case this function is not used
-    (void)axidma_reserve_channel;
 
     // Create a capability mask to match against for the DMA
     dma_cap_zero(dma_mask);
