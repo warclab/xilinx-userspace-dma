@@ -36,6 +36,25 @@
 // The skip destination unmap DMA control option was removed in 4.x
 #define DMA_COMPL_SKIP_DEST_UNMAP   0
 
+/* The xilinx_dma_config structure was removed in 4.x, so we create a dummy one
+ * here. AXI DMA no longer implements slave config, so this is ignored. */
+struct xilinx_dma_config {
+    int dummy;
+};
+
+/* Setup the config structure for DMA. In 4.x, the DMA config structure was
+ * removed, so we can safely just set it to zero here. */
+static inline
+void axidma_setup_dma_config(struct xilinx_dma_config *dma_config,
+                             enum dma_transfer_direction direction)
+{
+    // Silence the compiler, in case this function is not used
+    (void)axidma_setup_dma_config;
+
+    dma_config->dummy = 0;
+    return;
+}
+
 /* Setup the config structure for VDMA. In 4.x, the VDMA config no longer has
  * vsize, hsize, and stride fields. */
 static inline
@@ -66,6 +85,21 @@ void axidma_setup_vdma_config(struct xilinx_vdma_config *dma_config, int width,
 
 #include <linux/amba/xilinx_dma.h>  // Xilinx DMA config structures
 #include <linux/dmaengine.h>        // Definitions for DMA structures and types
+
+// Setup the config structure for DMA
+static inline
+void axidma_setup_dma_config(struct xilinx_dma_config *dma_config,
+                             enum dma_transfer_direction direction)
+{
+    // Silence the compiler, in case this function is not used
+    (void)axidma_setup_dma_config;
+
+    dma_config->direction = direction;  // Either to memory or from memory
+    dma_config->coalesc = 1;            // Interrupt for one transfer completion
+    dma_config->delay = 0;              // Disable the delay counter interrupt
+    dma_config->reset = 0;              // Don't reset the DMA engine
+    return;
+}
 
 // Setup the config structure for VDMA
 static inline

@@ -151,16 +151,6 @@ static struct axidma_chan *axidma_get_chan(struct axidma_device *dev,
     return chan;
 }
 
-static void axidma_setup_dma_config(struct xilinx_dma_config *dma_config,
-        enum dma_transfer_direction direction)
-{
-    dma_config->direction = direction;  // Either to memory or from memory
-    dma_config->coalesc = 1;            // Interrupt for one transfer completion
-    dma_config->delay = 0;              // Disable the delay counter interrupt
-    dma_config->reset = 0;              // Don't reset the DMA engine
-    return;
-}
-
 static void axidma_dma_callback(void *data)
 {
     struct axidma_cb_data *cb_data;
