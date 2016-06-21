@@ -352,8 +352,8 @@ int main(int argc, char **argv)
     printf("AXI DMA File Transfer Info:\n");
     printf("\tTransmit Channel: %d\n", trans.input_channel);
     printf("\tReceive Channel: %d\n", trans.output_channel);
-    printf("\tInput File Size: %.2f\n", BYTE_TO_MB(trans.input_size));
-    printf("\tOutput File Size: %.2f\n\n", BYTE_TO_MB(trans.output_size));
+    printf("\tInput File Size: %.2f Mb\n", BYTE_TO_MB(trans.input_size));
+    printf("\tOutput File Size: %.2f Mb\n\n", BYTE_TO_MB(trans.output_size));
 
     // Transfer the file over the AXI DMA
     rc = transfer_file(axidma_dev, &trans, output_path);
