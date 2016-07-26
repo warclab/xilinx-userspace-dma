@@ -1,110 +1,182 @@
-# Xilinx AXI DMA Driver and Library
+# Xilinx AXI DMA Driver and Library (Quick Start Guide)
 
-# NOTE: This documentation is still a work in progress.
+## Overview
 
-A Linux driver for Xilinx's AXI DMA IP block. The driver acts a generic layer between the processing system and the FPGA, and abstracts away the details of setting up DMA transactions. 
+A zero-copy Linux driver and a userspace interface library for Xilinx's AXI DMA and VDMA IP blocks. The purpose of this software stack is to allow userspace Linux applications to interact with hardware on the FPGA fabric. The driver and userspace library act as a generic layer between the procesor and FPGA, and abstracts away the details of setting up DMA transactions. The pupose of AXI DMA and VDMA is to serve as bridges for communication between the processing system and the FPGA , through one of the DMA ports on the Zynq processing system. 
 
-## Using the Driver and Library
+The purpose of the driver is to expose Xilinx's AXI DMA driver to userspace, acting as the interface between them, and to enable userspace to allocate zero-copy, physically contiguous DMA buffers for transfers. The userspace library provides a stable, clean interface to the driver, abstracting the details of specific IOCTL calls away from the application. The driver exposes its functionality via a character device, which the library interacts with.
 
-### Setting up the Linux Kernel for the Driver
+This driver supports both 3.x and 4.x version Xilinx kernels. It has been tested with the mainline Xilinx kernel, Xillinux, and the Analog Devices' kernel on the Zedboard. The driver should work with any 3.x or 4.x kernel, and should work with any board that uses a Zynq-7000 series processing system.
 
-The kernel has to be built in a particular configuration before you can compile the driver with an out-of-tree build. This driver depends on the contiguous memory allocator (CMA), and the Xilinx DMA and VDMA drivers. 
+## Features
 
-Please make sure the following configuration options are enabled for you kernel (either look in the **.config** at the top-level of your kernel source tree, or run `make menuconfig`):
+1. Zero-copy transmit (processor to FPGA), receive (FPGA to processor), and two-way combined DMA transfers.
+2. Support for transfers with Xilinx's AXI DMA and AXI VDMA (video DMA) IP blocks.
+3. Allocation of DMA buffers that are contiguous in physical memory, allowing for high-bandwidth DMA transfers, through the kernel's contiguous memory allocator (CMA).
+4. Allocation of memory that is coherent between the FPGA and processor, by disabling caching for those pages in the DMA buffer.
+4. Synchronous and asynchronous modes for transfers.
+5. Registration of callback functions that are called when an asynchronous transfer completes.
+6. Delivery of a POSIX real-time signal upon completion of an asynchronous transfer. 
+7. Support for DMA buffer sharing, or external DMA buffers. Currently the driver can only import a DMA buffer from another driver. This is useful, for example, when transfers need to be done with a frame buffer allocated by a DRM driver.
+
+## Setting Up the Driver
+
+### Linux Kernel
+
+The driver depends on the contiguous memory allocator (CMA), Xilinx's DMA and VDMA driver, and DMA buffer sharing. These must be enabled in the kernel the driver is complied against. These should be enabled by default in any Xilinx Linux kenrel fork. To be sure, make sure to double check the kernel configuration by running `make menuconfig` or by opening the `.config` file at the top level of your kernel source tree. The following options should be enabled:
 ```bash
 CONFIG_CMA=y
 CONFIG_XILINX_DMAENGINES=y
 CONFIG_XILINX_AXIDMA=y
 CONFIG_XILINX_AXIVDMA=y
+CONFIG_DMA_SHARED_BUFFER=y
 ```
 
-Depending on the exact kernel distribution you are using, then the configuration options for the Xilinx drivers may be slightly different (for example, the Analog Devices kernel is different). If the above doesn't work, then try these config options:
-```bash
-CONFIG_CMA=y
-CONFIG_XILINX_DMAENGINES=y
-CONFIG_XILINX_AXIDMA=y
-CONFIG_XILINX_VDMA=y
+### Device Tree
+
+The driver requires a node in the device tree. This node describes the DMA channels that the driver has exclusive access. It is also used to probe the driver, so the driver is activited only when this node is present. The node has the following properties:
+* `compatible` - This must be the string "xlnx,axidma-chrdev". This is used to match the driver with the device tree node.
+* `dmas` - A list of phandles (references to other device tree nodes) of Xilinx AXI DMA or VDMA device tree nodes, followed by either 0 or 1. This refers to the child node inside of the Xilinx AXI DMA/VDMA device tree node, 0 of course being the first child node.
+* `dma-names` - A list of names for the DMA channels. The names can be completely arbitrary, but they must be unique. This is required by the DMA interface function `dma_request_slave_channel()`, but is otherwise unused by the driver. In the future, the driver will use the names in printed messages.
+
+For the Xilinx AXI DMA/VDMA device tree nodes, the only requirement is that the `device-id` property is unique, but they can be completely arbitrary. This is how the channels are referred to in both the driver and from userspace. For more information on creating AXI DMA/VDMA device tree nodes, consult the kernel [documentation](https://github.com/Xilinx/linux-xlnx/blob/master/Documentation/devicetree/bindings/dma/xilinx/xilinx_dma.txt) for them.
+
+Here is a simple example of the device tree nodes for a system with a single AXI DMA IP, with both a transmit and receive channel. Note you will need to adjust this for your kernel tree and setup:
+```
+axidma_chrdev: axidma_chrdev@0 {
+    compatible = "xlnx,axidma-chrdev";
+    dmas = <&axi_dma_0 0 &axi_dma_0 1>;
+    dma-names = "tx_channel", "rx_channel";
+};
+
+axi_dma_0: axidma0@40400000 {
+    compatible = "xlnx,axi-dma", "xlnx,axi-dma-6.03.a", "xlnx,axi-dma-1.00.a";
+    reg = <0x40400000 0x10000>;
+    xlnx,include-sg;
+    #dma-cells = <1>;
+
+    dma-mm2s-channel@40400000 {
+        compatible = "xlnx,axi-dma-mm2s-channel";
+        dma-channels = <1>;
+        xlnx,datawidth = <64>;
+        xlnx,device-id = <0x0>;
+        clocks = <&clkc 15>;
+        clock-names = "axis";
+        interrupt-parent = <&intc>;
+        interrupts = <0 29 4>;
+    };
+    dma-s2mm-channel@40400000 {
+        compatible = "xlnx,axi-dma-s2mm-channel";
+        dma-channels = <1>;
+        xlnx,datawidth = <64>;
+        xlnx,device-id = <0x1>;
+        clocks = <&clkc 15>;
+        clock-names = "axis";
+        interrupt-parent = <&intc>;
+        interrupts = <0 30 4>;
+    };
+};
 ```
 
-Otherwise, you can search for the Xilinx DMA configuration options when you when `make menuconfig`, they should be clearly marked.
+### Kernel Command Line
 
-### Compiling the Driver
+The contiguous memory allocator works by reserving a pool of memory for contiguous memory allocations that it uses when requested. By default this size is too small for typical uses with this driver. The size can be changed by appending `cma=<size>M` to the kernel command line arguments. This sets the pool's size to `size` MBs.
 
-The Makefile supports out-of-tree buildling for the driver. To compile the driver, you need to specify the path to the top-level directory of the source tree of the kernel you're buildling it for.
-```bash
-make KBUILD_DIR=</path/to/kernel/tree> driver
+The kernel command line can be updated by changing the device tree or from the U-Boot console. For example, to set the CMA's pool size to 25 MB from the U-Boot console:
 ```
-
-If you're cross compiling, you can specify so via the usual methods. Specify `ARCH` and `CROSS_COMPILE` to the appropiate values. The Makefile supports both native and cross compilation. This will generate a kernel object file for the driver at `axidma/axidma.ko`. 
-
-### Compiling the Examples
-
-The driver and library comes with several example programs that show how to write a C application to use the software stack. One example is a performance evaluator for the DMA and whatever logic is on the PL. The other example is to display an image by sending it over DMA to some video IP, and the third example is a file transfer over DMA.
-
-To compile the example programs:
-```bash
-make examples
-```
-
-If you're cross-compiling, make sure to specify the appropiate variables for cross-compilation. This will generate binary files under the `examples` directory that you can run.
-
-### Using the Driver and Library in Your Application
-
-The library is simply distributed as C source files, and it is not built into a static or shared library. Rather, when you write your application, you simply need to include the library's header file, `libaxidma/libaxidma.h`, and compile the library source with your application, `libaxidma/libaxidma.c`. The driver is compiled independently from your application.
-
-### Updating the Kernel Command Line
-
-In order to properly use the driver, you need to the the kernel to reserve a region of memory for contiguous memory allocations that the driver can use. This is done by specifying a `cma=<size>` option on the kernel command line. You can see to updating the kernel command to however best works for you. As an example, you could enter the following command from the U-Boot console when you boot up (assuming `bootargs` is already a defined variable):
-```bash
 setenv bootargs "${bootargs} cma=25M"
 ```
 
-Naturally, depending on your application, you may need more or less than 25 MB of memory for DMA buffer allocations. Change this value to what works best for you.
+**NOTE:** In the future, specifying the CMA region size will be moved into the device tree, so this will not be necessary.
 
-### Running an Application
+## Compilation
 
-Compiling the driver will generate a kernel object file (.ko). Before you run your application, make sure the driver has been inserted into the kernel:
+### Makefile Variables
+
+The Makefile supports both native and cross compilation, and is repsonsible for compiling the driver and a few example programs. It has the following variables:
+* `CROSS_COMPILE` - The prefix for the compiler to use for cross-compilation.
+* `ARCH` - The architecture being compiled for. Required for compiling the driver when cross-compiling.
+* `KBUILD_DIR` - The path to the kernel source tree to compile the driver against. The kernel must already be built. Required for compiling the driver.
+* `OUTPUT_DIR` - The path to the output directory to place the generated files in. Defaults to `outputs` in the top-level directory.
+
+For a complete list of targets, and a more complete description of the options, run:
+```bash
+make help
+```
+
+### Compiling the Driver
+
+The Makefile supports out-of-tree compilation for the driver. To compile the driver, you must specify the path to a kernel source tree that is already built. Also, you can specify any cross-compilation options as necessary. For example, to compile the driver for ARM:
+```bash
+make CROSS_COMPILE=arm-linux-gnueabihf- ARCH=arm KBUILD_DIR=</path/to/kernel/tree> driver
+```
+
+This will generate a kernel object for the driver at `outputs/axidma.ko`.
+
+### Compiling the Examples
+
+The driver and library come with several example programs that show how to use the API. There's a program that benchmarks a two-way transfer, one that transmits a file over a channel, and one that displays an image (assuming the proper hardware is there). Consult the command line help for each program on usage. To cross-compile the examples for ARM:
+```bash
+make CROSS_COMPILE=arm-linux-gnueabihf- ARCH=arm examples
+```
+
+This will generate executables for the examples under `outputs`.
+
+### Using the Library
+
+Using in your application is straight-forward; you simply need to compile your application with the library source code, `libaxidma.c`. Also, you need to include the library's header file `libaxidma.h`.
+
+**NOTE:** In the future, the library will be compiled as a proper shared library, so you will need only include the header file, and link against the shared library.
+
+## Running an Application
+
+Before you run an application that uses the AXI DMA software stack, you must make sure that the driver has been inserted into the kernel. This can be accomplished with:
 ```bash
 insmod axidma.ko
 ```
 
-To verify that it has been successfully added to the kernel, run `dmesg` to check the kernel's log. You should see a message like the following:
+This should create a character device for the driver at `/dev/axidma`. To verify that the insertion was successful, run `dmesg` to view the kernel log messages. You should see a message like the following:
 ```
-axidma: axidma_dma.c: 776: DMA: Found 1 transmit channels and 1 receive channels.
+axidma: axidma_dma.c: 672: DMA: Found 1 transmit channels and 1 receive channels.
+axidma: axidma_dma.c: 674: VDMA: Found 0 transmit channels and 0 receive channels.
 ```
 
-Once the module is loaded into the kernel, you can then run your application. If anything goes wrong while running the application, be sure to check the kernel's log through `dmesg`; the driver will print out information any time there is an error.
+Naturally, the numbers will vary based on your specific configuration.
 
-## Running a Simple Loopback Example
+## Debugging Issues with the Software Stack
 
-To be completed.
+The driver prints out a detailed message every time that it encounters an error to the kernel log message buffer. If the library says that an error occured, run `dmesg` to see the kernel log. The driver will print out a detailed message, along with the file, function, and line number that the error occured on.
 
-## Additional Information on the Software Stack
+## Limitations/To-Do's
 
-### Purpose of the Driver and LIbrary
+1. There is currently no explicit support for concurrency, so only one thread should access the driver at a time.
+2. The character device is opened in exclusive mode, so only one process can access the driver at a time.
+3. The driver cannot export DMA buffers for sharing, it only supports importing at the moment. 
+4. There is no support for multi-channel mode.
 
-The driver mainly serves to act as the interface between userspace and Xilinx's AXI DMA driver in the kernel. The Xilinx driver does not have a direct interface to userspace, and it handles simply performing the writes and reads on MMIO registers for the AXI DMA IP. This driver handles translating this driver's functions into a clean interface. Also, the driver setting up the DMA buffers so that userspace can access them, and that they will allow for high-throughput transfers. 
+## Additional Information
 
-The library, called libaxidma, serves to further abstract away the system call interface required to use the driver. The driver implements all of its functionality through IOCTL calls, so the library provides a stable interface, as the IOCTL interface may change over time. Additionally, the library provides an cleaner and more uniform interface to the driver.
+For more detailed information, including how to boot Linux on the Zedboard, and how to run a simple DMA loopback example to test the software stack's functionality, see the [wiki](https://github.com/bperez77/xilinx_axidma/wiki).
 
-## Features
+**NOTE:** The wiki is still under construction.
 
-1. Abstracts away the fine-grained deatils of the AXI DMA IP.
-2. Transmit (ARM -> FPGA), receive (FPGA -> ARM), and two-way combined transfers.
-3. Frame buffer mode (also called cyclic mode) that allows for the continuous transmission of N frame buffers.
-3. Supports both synchronous and asynchronous modes for transfers.
-4. Registration of a callback function that will be run upon completion of the transfer.
-5. Memory allocator that allocates memory that is coherent between the processing system and the FPGA, by disabling caching for the allocated pages.
-6. Memory allocator that allocates memory that is contiguous in physical memory, allowing for high-throughput DMA transfers.
+## References
 
-## Limitations
+Xilinx's AXI VDMA and DMA Driver - [Source Code](https://github.com/Xilinx/linux-xlnx/blob/master/drivers/dma/xilinx/xilinx_dma.c)
 
-1. Driver currently has no support for concurrency.
-2. Only one process can access the DMA device at a time.
+Xilinx's AXI DMA Test Driver (Shows How to Write a Driver to Use Xilinx's AXI DMA Driver) - [Source Code](https://github.com/Xilinx/linux-xlnx/blob/master/drivers/dma/xilinx/axidmatest.c)
 
-## Requirements
+Documentation on Xilinx AXI DMA Device Tree Node Bindings - [Documentation](https://github.com/Xilinx/linux-xlnx/blob/master/Documentation/devicetree/bindings/dma/xilinx/xilinx_dma.txt)
 
-Our driver should be able to be used with any distribution of the 3.x or 4.x Linux kernels. It has been tested with our fork of the Xillinux kernel distribution. You can find the repository for that kernel [here](https://github.com/bperez77/zynq_linux). There is also a helpful wiki on how to build and run Linux for the Zedboard if you're new to the process.
+Documentation for DMA Device Tree Bindings - [Documentation](https://github.com/Xilinx/linux-xlnx/blob/master/Documentation/devicetree/bindings/dma/dma.txt)
+
+Documentation for CMA (reserved memory regions) Device Tree Bindings - [Documentation](https://github.com/Xilinx/linux-xlnx/blob/master/Documentation/devicetree/bindings/reserved-memory/reserved-memory.txt)
+
+Documentation on DMA Buffer Sharing - [Documentation](https://github.com/Xilinx/linux-xlnx/blob/master/Documentation/dma-buf-sharing.txt)
+
+Documentation for Xilinx's AXI DMA IP Core (Vivado 2015.2, Version 7.1) - [Documentation](http://www.xilinx.com/support/documentation/ip_documentation/axi_dma/v7_1/pg021_axi_dma.pdf)
+
+Documentation for Xilinx's AXI VDMA IP Core (Vivado 2015.2, Version 6.2) - [Documentation](http://www.xilinx.com/support/documentation/ip_documentation/axi_vdma/v6_2/pg020_axi_vdma.pdf)
 
 ## License (MIT)
 
