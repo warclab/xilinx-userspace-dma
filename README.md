@@ -2,7 +2,7 @@
 
 ## Overview
 
-A zero-copy Linux driver and a userspace interface library for Xilinx's AXI DMA and VDMA IP blocks. The purpose of this software stack is to allow userspace Linux applications to interact with hardware on the FPGA fabric. The driver and userspace library act as a generic layer between the procesor and FPGA, and abstracts away the details of setting up DMA transactions. The pupose of AXI DMA and VDMA is to serve as bridges for communication between the processing system and the FPGA , through one of the DMA ports on the Zynq processing system. 
+A zero-copy Linux driver and a userspace interface library for Xilinx's AXI DMA and VDMA IP blocks. The purpose of this software stack is to allow userspace Linux applications to interact with hardware on the FPGA fabric. The driver and userspace library act as a generic layer between the procesor and FPGA, and abstracts away the details of setting up DMA transactions. The pupose of AXI DMA and VDMA is to serve as bridges for communication between the processing system and the FPGA , through one of the DMA ports on the Zynq processing system.
 
 The purpose of the driver is to expose Xilinx's AXI DMA driver to userspace, acting as the interface between them, and to enable userspace to allocate zero-copy, physically contiguous DMA buffers for transfers. The userspace library provides a stable, clean interface to the driver, abstracting the details of specific IOCTL calls away from the application. The driver exposes its functionality via a character device, which the library interacts with.
 
@@ -16,7 +16,7 @@ This driver supports both 3.x and 4.x version Xilinx kernels. It has been tested
 4. Allocation of memory that is coherent between the FPGA and processor, by disabling caching for those pages in the DMA buffer.
 4. Synchronous and asynchronous modes for transfers.
 5. Registration of callback functions that are called when an asynchronous transfer completes.
-6. Delivery of a POSIX real-time signal upon completion of an asynchronous transfer. 
+6. Delivery of a POSIX real-time signal upon completion of an asynchronous transfer.
 7. Support for DMA buffer sharing, or external DMA buffers. Currently the driver can only import a DMA buffer from another driver. This is useful, for example, when transfers need to be done with a frame buffer allocated by a DRM driver.
 
 ## Setting Up the Driver
@@ -26,6 +26,7 @@ This driver supports both 3.x and 4.x version Xilinx kernels. It has been tested
 The driver depends on the contiguous memory allocator (CMA), Xilinx's DMA and VDMA driver, and DMA buffer sharing. These must be enabled in the kernel the driver is complied against. These should be enabled by default in any Xilinx Linux kenrel fork. To be sure, make sure to double check the kernel configuration by running `make menuconfig` or by opening the `.config` file at the top level of your kernel source tree. The following options should be enabled:
 ```bash
 CONFIG_CMA=y
+CONFIG_DMA_CMA=y
 CONFIG_XILINX_DMAENGINES=y
 CONFIG_XILINX_AXIDMA=y
 CONFIG_XILINX_AXIVDMA=y
@@ -98,11 +99,14 @@ The Makefile supports both native and cross compilation, and is repsonsible for 
 * `ARCH` - The architecture being compiled for. Required for compiling the driver when cross-compiling.
 * `KBUILD_DIR` - The path to the kernel source tree to compile the driver against. The kernel must already be built. Required for compiling the driver.
 * `OUTPUT_DIR` - The path to the output directory to place the generated files in. Defaults to `outputs` in the top-level directory.
+* `XILINX_DMA_INCLUDE_PATH_FIXUP` - This specifies to fixup the issue with the location of the `xilinx_dma.h` header file in the kernel being compiled against. Specify this if you see an include error when compiling the driver.
 
 For a complete list of targets, and a more complete description of the options, run:
 ```bash
 make help
 ```
+
+The Makefile also supports specifying these variables in a configuration file. The repository distirbutes a template for this file at `config_template.mk`. To use this file, copy it to `config.mk`, and uncomment and fill in the varaibles as needed.
 
 ### Compiling the Driver
 
@@ -122,11 +126,16 @@ make CROSS_COMPILE=arm-linux-gnueabihf- ARCH=arm examples
 
 This will generate executables for the examples under `outputs`.
 
-### Using the Library
+### Compiling and Using the Library
 
-Using in your application is straight-forward; you simply need to compile your application with the library source code, `libaxidma.c`. Also, you need to include the library's header file `libaxidma.h`.
+The userspace library is compiled the typical shared object file. To compile the library for ARM:
+```bash
+make CROSS_COMPILE=arm-linux-gnueabihf- ARCH=arm library
+```
 
-**NOTE:** In the future, the library will be compiled as a proper shared library, so you will need only include the header file, and link against the shared library.
+This will generate a shared object file for the AXI DMA library at `outputs/libaxidma.so`.
+
+To use the library with your application, you need to compile your program against the library, by specifying the flags `-I </path/to/repo>/include -L </path/to/repo>/outputs/ -l axidma` when compiling. Then, so the executable can find the library at runtime, you need to copy the library file to the board's filesytem. You can either copy to one of the default system library directories, such as `/usr/lib/`, or you can add the `outputs` directory to the `LD_LIBRARY_PATH` environment variable. See how the examples programs are compiled in their [Makefile](https://github.com/bperez77/xilinx_axidma/blob/master/examples/Makefile).
 
 ## Running an Application
 
@@ -147,11 +156,20 @@ Naturally, the numbers will vary based on your specific configuration.
 
 The driver prints out a detailed message every time that it encounters an error to the kernel log message buffer. If the library says that an error occured, run `dmesg` to see the kernel log. The driver will print out a detailed message, along with the file, function, and line number that the error occured on.
 
+There is an issue with the location of the Xilinx DMA header file, `xilinx_dma.h` in the Xilinx kernels. In between the 3.x and 4.x version, the location of this file changed, but certain 4.x kernels still use the old location from the 3.x kernel. If you see an error message like the following when compiling the driver, then specify the `XILINX_DMA_INCLUDE_PATH_FIXUP` Makefile variable when compiling:
+```
+In file included from /home/bmperez/projects/xilinx_axidma/driver/axidma_dma.c:24:0:
+/home/bmperez/projects/xilinx_axidma/driver/version_portability.h:25:68: fatal error: linux/dma/xilinx_dma.h: No such file or directory
+ #include <linux/dma/xilinx_dma.h>   // Xilinx DMA config structures
+                                                                    ^
+compilation terminated.
+```
+
 ## Limitations/To-Do's
 
 1. There is currently no explicit support for concurrency, so only one thread should access the driver at a time.
 2. The character device is opened in exclusive mode, so only one process can access the driver at a time.
-3. The driver cannot export DMA buffers for sharing, it only supports importing at the moment. 
+3. The driver cannot export DMA buffers for sharing, it only supports importing at the moment.
 4. There is no support for multi-channel mode.
 
 ## Additional Information
