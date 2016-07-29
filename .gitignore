@@ -1,13 +1,53 @@
+# Kernel object file generated in the driver directory
+driver/axidma.ko
+
+# Shared library generated in the AXI DMA library directory
+libaxidma/libaxidma.so
+
 # Binaries generated in the examples directory
 examples/axidma_benchmark
 examples/axidma_display_image
 examples/axidma_transfer
 
-# The outputs directory, where the generated files are stored
+# The outputs directory, where the generated files are copied
 outputs/
 
 # The user Makefile configuration file
 config.mk
+
+# C Object files
+*.o
+*.ko
+*.obj
+*.elf
+
+# Kernel module files
+*.cmd
+*.ko
+*.mod.c
+Module.symvers
+modules.order
+.tmp_versions/
+
+# Libraries
+*.lib
+*.a
+*.la
+*.lo
+
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
 
 # Latex files
 *.out
@@ -88,49 +128,12 @@ testbench/
 *.xrf
 *.sft
 
-# Test log directory
-outputs/
-
 # Python copmiled files
 *.pyc
-
-# C Object files
-*.o
-*.ko
-*.obj
-*.elf
-
-# Kernel module files
-*.cmd
-*.ko
-*.mod.c
-Module.symvers
-modules.order
-.tmp_versions/
 
 # C Precompiled Headers
 *.gch
 *.pch
-
-# Libraries
-*.lib
-*.a
-*.la
-*.lo
-
-# Shared objects (inc. Windows DLLs)
-*.dll
-*.so
-*.so.*
-*.dylib
-
-# Executables
-*.exe
-*.out
-*.app
-*.i*86
-*.x86_64
-*.hex
 
 # Any log type file
 *.log
