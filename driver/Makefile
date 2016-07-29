@@ -21,13 +21,17 @@ include $(PWD)/libaxidma/Makefile
 # Configuration
 ################################################################################
 
-# Export cross compiler variables for the kernel Makefile if they are defined
+# Export user variables for the kernel Makefile if they are defined
 ifdef CROSS_COMPILE
 export CROSS_COMPILE
 endif
 ifdef ARCH
 export ARCH
 endif
+ifneq ($(origin XILINX_DMA_INCLUDE_PATH_FIXUP),undefined)
+export XILINX_DMA_INCLUDE_PATH_FIXUP
+endif
+
 
 # When natively compiling, we can infer the kernel's source tree directory,
 # if the user has not specified it.
@@ -55,6 +59,12 @@ obj-m += $(MODULE_NAME).o
 # paths must be absolute because the directory is changed when compiling.
 DRIVER_INC_FLAGS := $(addprefix -I$(PWD)/,$(LIBAXIDMA_INC_DIRS))
 ccflags-y = $(DRIVER_INC_FLAGS) -Werror
+
+# If specified, define the macro to fixup the path for the Xilinx DMA include.
+# In some 4.x Xilinx kernels, the file is still in the old path from 3.x.
+ifneq ($(origin XILINX_DMA_INCLUDE_PATH_FIXUP),undefined)
+ccflags-y += -DXILINX_DMA_INCLUDE_PATH_FIXUP
+endif
 
 ################################################################################
 # Targets

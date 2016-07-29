@@ -15,6 +15,17 @@
 #define VERSION_PORTABILITY_H_
 
 #include <linux/version.h>          // Linux version macros
+#include <linux/dmaengine.h>        // Definitions for DMA structures and types
+
+/* Between 3.x and 4.x, the path to Xilinx's DMA include file changes. However,
+ * in some 4.x kernels, the path is still the old one from 3.x. The macro is
+ * defined by the Makefile, when specified by the user. */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,0,0) && \
+    !defined(XILINX_DMA_INCLUDE_PATH_FIXUP)
+#include <linux/dma/xilinx_dma.h>   // Xilinx DMA config structures
+#else
+#include <linux/amba/xilinx_dma.h>  // Xilinx DMA config structures
+#endif
 
 /*----------------------------------------------------------------------------
  * Common Functions
@@ -38,9 +49,6 @@ enum dma_transfer_direction axidma_to_dma_dir(enum axidma_dir dma_dir)
          "and greater versions are untested")
 
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(4,0,0)
-
-#include <linux/dma/xilinx_dma.h>   // Xilinx DMA config structures (diff path)
-#include <linux/dmaengine.h>        // Definitions for DMA structures and types
 
 // DMA_SUCCESS was renamed to DMA_COMPLETE (indicates a DMA transaction is done)
 #define DMA_SUCCESS                 DMA_COMPLETE
@@ -100,7 +108,6 @@ struct dma_chan *axidma_reserve_channel(struct platform_device *pdev,
 
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0)
 
-#include <linux/amba/xilinx_dma.h>  // Xilinx DMA config structures
 #include <linux/dmaengine.h>        // Definitions for DMA structures and types
 
 // Setup the config structure for DMA
@@ -191,7 +198,7 @@ struct dma_chan *axidma_reserve_channel(struct platform_device *pdev,
 #else
 
 #error("This driver only supports Linux 3.x and 4.x versions. Linux 2.x " \
-       "and lower versions are untested.")
+       "and lower versions are unsupported.")
 
 #endif /* LINUX_VERSION_CODE */
 
