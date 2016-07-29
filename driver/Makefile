@@ -6,6 +6,14 @@
 #
 # The Makefile for building the AXI DMA driver.
 
+# Include gaurd for the Makefile
+ifndef DRIVER_MAKEFILE_
+DRIVER_MAKEFILE_=included
+
+# Get the libaxidma include paths. Make the path absolute so that the
+# kernel's Makefile can include this Makefile.
+include $(PWD)/libaxidma/Makefile
+
 ################################################################################
 # Configuration
 ################################################################################
@@ -34,10 +42,8 @@ obj-m += $(MODULE_NAME).o
 
 # Set the CFLAGS for compiling the module, adding the include paths. The include
 # paths must be absolute because the directory is changed when compiling.
-# TODO: This will be fixed when the axidma library has its own Makefile
-LIBAXIDMA_INC_DIRS = include
 DRIVER_INC_FLAGS := $(addprefix -I$(PWD)/,$(LIBAXIDMA_INC_DIRS))
-ccflags-y = $(DRIVER_INC_FLAGS) -Werror -obviously-fake-option
+ccflags-y = $(DRIVER_INC_FLAGS) -Werror
 
 ################################################################################
 # Targets
@@ -47,7 +53,7 @@ ccflags-y = $(DRIVER_INC_FLAGS) -Werror -obviously-fake-option
 .PHONY: driver driver_debug driver_clean kbuild_def_check arch_def_check \
 		kbuild_exists_check kbuild_built_check
 
-# User-facing target for compiling the driver against the specified kernel
+# User-facing targets for compiling the driver with and without debug mode
 driver driver_debug: $(DRIVER_OUTPUT_OBJECT)
 
 # Compile the driver against the given kernel. The check targets are phony, so
@@ -98,3 +104,5 @@ ifeq (,$(wildcard $(KBUILD_DIR)/Module.symvers))
 	@printf "before compiling the driver against it.\n"
 	@exit 1
 endif
+
+endif # DRIVER_MAKEFILE_

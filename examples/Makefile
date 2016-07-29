@@ -4,6 +4,13 @@
 # Author: Brandon Perez
 # Author: Jared Choi
 
+# Include guard for the Makefile
+ifndef EXAMPLES_MAKEFILE_
+EXAMPLES_MAKEFILE_=included
+
+# Get the definitions for the AXI DMA library
+include libaxidma/Makefile
+
 ################################################################################
 # Configuration
 ################################################################################
@@ -22,7 +29,6 @@ EXAMPLES_OUTPUT_EXECUTABLES = $(addprefix $(OUTPUT_DIR)/,$(EXAMPLES_TARGETS))
 # The location of the AXI DMA library used for compilation
 LIBAXIDMA_DIR = libaxidma
 LIBAXIDMA_FILES = libaxidma.c
-LIBAXIDMA = $(addprefix $(LIBAXIDMA_DIR)/,$(LIBAXIDMA_FILES))
 
 # The local helper function files used across the example programs.
 UTIL_DIR = $(EXAMPLES_DIR)
@@ -32,6 +38,12 @@ UTIL = $(addprefix $(UTIL_DIR)/,$(UTIL_FILES))
 # Compile at O3 by default, and add debug flags for any debug targets
 EXAMPLES_CFLAGS = $(GLOBAL_CFLAGS) -O3
 debug $(EXAMPLES_DEBUG_TARGETS): EXAMPLES_CFLAGS = $(GLOBAL_CFLAGS) -g -O0
+
+# Set the example executables to link against the AXI DMA shared library in
+# the outputs directory
+EXAMPLES_LINKER_FLAGS = -Wl,-rpath,'$$ORIGIN'
+EXAMPLES_LIB_FLAGS = -L $(OUTPUT_DIR) -l $(LIBAXIDMA_NAME) \
+					 $(EXAMPLES_LINKER_FLAGS)
 
 ################################################################################
 # Targets
@@ -52,10 +64,12 @@ examples examples_debug: $(EXAMPLES_TARGETS)
 $(EXAMPLES_TARGETS): $(OUTPUT_DIR)/$$@
 $(EXAMPLES_DEBUG_TARGETS): $(OUTPUT_DIR)/$$(patsubst %_debug,%,$$@)
 
-# Compile a given example into an executable. The check target is phony, so
-# don't force these targets to run because of the target.
-$(EXAMPLES_EXECUTABLES): $$@.c $(LIBAXIDMA) $(LIBAXIDMA_INC) $(UTIL) | cross_compiler_check
-	$(CC) $(EXAMPLES_CFLAGS) $(LIBAXIDMA_INC_FLAGS) $(filter %.c,$^) -o $@
+# Compile a given example into an executable. This target does not need re-run
+# because of the check target nor the AXI DMA shared library object.
+$(EXAMPLES_EXECUTABLES): $$@.c $(UTIL) | $(LIBAXIDMA_OUTPUT_LIBRARY) \
+						 cross_compiler_check
+	$(CC) $(EXAMPLES_CFLAGS) $(LIBAXIDMA_INC_FLAGS) $(filter %.c,$^) -o $@ \
+		$(EXAMPLES_LIB_FLAGS)
 
 # Copy a compiled example executable to the specified output directory
 $(EXAMPLES_OUTPUT_EXECUTABLES): $(EXAMPLES_DIR)/$$(shell basename $$@) \
@@ -68,3 +82,5 @@ examples_clean: $(EXAMPLES_CLEAN_TARGETS)
 # Clean a specific example by deleting both copies of the executable
 $(EXAMPLES_CLEAN_TARGETS):
 	rm -f $(OUTPUT_DIR)/$(@:%_clean=%) $(EXAMPLES_DIR)/$(@:%_clean=%)
+
+endif # EXAMPLES_MAKEFILE_
