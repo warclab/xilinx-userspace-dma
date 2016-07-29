@@ -6,6 +6,9 @@ examples/axidma_transfer
 # The outputs directory, where the generated files are stored
 outputs/
 
+# The user Makefile configuration file
+config.mk
+
 # Latex files
 *.out
 *.log

@@ -7,6 +7,9 @@
 # The top-level Makefile for the project, handles compilation for both the
 # driver and the example application programs
 
+# Include the user defined variables, if they specified them
+-include config.mk
+
 ################################################################################
 # Configuration
 ################################################################################
@@ -115,6 +118,10 @@ help:
 	@printf "\t    Display this help message.\n"
 	@printf "\n"
 	@printf "Variables:\n"
+	@printf "\tThe variables can be specified either on the command line or\n"
+	@printf "\tin 'config.mk'. See 'config_template.mk' for a template of the\n"
+	@printf "\tMakefile configuration file.\n"
+	@printf "\n"
 	@printf "\tCROSS_COMPILE\n"
 	@printf "\t    The prefix for the cross compiler to use for compilation.\n"
 	@printf "\t    For example, \`arm-linux-gnueabi-\`. Not required; if left\n"

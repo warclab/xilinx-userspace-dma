@@ -6,7 +6,7 @@
 #
 # The Makefile for building the AXI DMA library.
 
-# Include gaurd for the Makefile
+# Include guard for the Makefile
 ifndef LIBAXIDMA_MAKEFILE_
 LIBAXIDMA_MAKEFILE_=included
 

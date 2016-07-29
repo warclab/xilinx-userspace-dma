@@ -6,9 +6,12 @@
 #
 # The Makefile for building the AXI DMA driver.
 
-# Include gaurd for the Makefile
+# Include guard for the Makefile
 ifndef DRIVER_MAKEFILE_
 DRIVER_MAKEFILE_=included
+
+# Get the user defined variables, if they specified them
+-include config.mk
 
 # Get the libaxidma include paths. Make the path absolute so that the
 # kernel's Makefile can include this Makefile.
@@ -18,11 +21,19 @@ include $(PWD)/libaxidma/Makefile
 # Configuration
 ################################################################################
 
+# Export cross compiler variables for the kernel Makefile if they are defined
+ifdef CROSS_COMPILE
+export CROSS_COMPILE
+endif
+ifdef ARCH
+export ARCH
+endif
+
 # When natively compiling, we can infer the kernel's source tree directory,
 # if the user has not specified it.
 ifndef CROSS_COMPILE
 KERNEL_VERSION = $(shell uname -r)
-KBUILD_DIR = /lib/modules/$(KERNEL_VERSION)/build/
+KBUILD_DIR ?= /lib/modules/$(KERNEL_VERSION)/build/
 endif
 
 # The list of source files for the driver
@@ -60,7 +71,6 @@ driver driver_debug: $(DRIVER_OUTPUT_OBJECT)
 # don't force this target to run because of them.
 $(DRIVER_OBJECT): $(DRIVER) | kbuild_def_check arch_def_check \
 				  kbuild_exists_check kbuild_built_check cross_compiler_check
-	@echo $($(MODULE_NAME)-objs)
 	make -C $(KBUILD_DIR) M=$(PWD)/$(DRIVER_DIR) modules
 
 # Copy the compiled driver to the specified output directory
