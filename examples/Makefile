@@ -9,7 +9,7 @@ ifndef EXAMPLES_MAKEFILE_
 EXAMPLES_MAKEFILE_=included
 
 # Get the definitions for the AXI DMA library
-include libaxidma/Makefile
+include library/Makefile
 
 ################################################################################
 # Configuration
@@ -25,10 +25,6 @@ EXAMPLES_DEBUG_TARGETS = $(addsuffix _debug,$(EXAMPLES_TARGETS))
 EXAMPLES_CLEAN_TARGETS = $(addsuffix _clean,$(EXAMPLES_TARGETS))
 EXAMPLES_EXECUTABLES = $(addprefix $(EXAMPLES_DIR)/,$(EXAMPLES_TARGETS))
 EXAMPLES_OUTPUT_EXECUTABLES = $(addprefix $(OUTPUT_DIR)/,$(EXAMPLES_TARGETS))
-
-# The location of the AXI DMA library used for compilation
-LIBAXIDMA_DIR = libaxidma
-LIBAXIDMA_FILES = libaxidma.c
 
 # The local helper function files used across the example programs.
 UTIL_DIR = $(EXAMPLES_DIR)
