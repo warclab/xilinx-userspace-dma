@@ -200,8 +200,8 @@ Documentation for Xilinx's AXI VDMA IP Core (Vivado 2015.2, Version 6.2) - [Docu
 
 The MIT License (MIT)
 
-Copyright (c) 2016 Brandon Perez <bmperez@andrew.cmu.edu> <br>
-Copyright (c) 2016 Jared Choi <jaewonch@andrew.cmu.edu>
+Copyright (c) 2015-2016 Brandon Perez <bmperez@andrew.cmu.edu> <br>
+Copyright (c) 2015-2016 Jared Choi <jaewonch@andrew.cmu.edu>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
