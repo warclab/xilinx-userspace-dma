@@ -32,7 +32,6 @@ ifneq ($(origin XILINX_DMA_INCLUDE_PATH_FIXUP),undefined)
 export XILINX_DMA_INCLUDE_PATH_FIXUP
 endif
 
-
 # When natively compiling, we can infer the kernel's source tree directory,
 # if the user has not specified it.
 ifndef CROSS_COMPILE
@@ -112,7 +111,7 @@ endif
 # Check that the specified kernel source tree directory exists
 kbuild_exists_check:
 ifeq (,$(wildcard $(KBUILD_DIR)))
-	@printf "Error: $(KBUILD_DIR): The kernel source tree does not exist."
+	@printf "Error: $(KBUILD_DIR): The kernel source tree does not exist.\n"
 	@exit 1
 endif
 

@@ -42,7 +42,7 @@
 
 # This specifies to fixup the path that the file `xilinx_dma.h` is located at in
 # the kernel that you're compiling against. The location of this header file was
-# changed between the 4.x and 3.x Xilinx kernel versions. However, some 4.x
+# changed between the 3.x and 4.x Xilinx kernel versions. However, some 4.x
 # kernels still have the file at the old location. This variable specifies the
 # Makefile to define a macro that fixes this issue. Uncomment this (no value is
 # required), if the driver fails to compile with an error like:
