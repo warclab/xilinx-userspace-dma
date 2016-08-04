@@ -176,8 +176,6 @@ compilation terminated.
 
 For more detailed information, including how to boot Linux on the Zedboard, and how to run a simple DMA loopback example to test the software stack's functionality, see the [wiki](https://github.com/bperez77/xilinx_axidma/wiki).
 
-**NOTE:** The wiki is still under construction.
-
 ## References
 
 Xilinx's AXI VDMA and DMA Driver - [Source Code](https://github.com/Xilinx/linux-xlnx/blob/master/drivers/dma/xilinx/xilinx_dma.c)
