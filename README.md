@@ -137,6 +137,15 @@ This will generate a shared object file for the AXI DMA library at `outputs/liba
 
 To use the library with your application, you need to compile your program against the library, by specifying the flags `-I </path/to/repo>/include -L </path/to/repo>/outputs/ -l axidma` when compiling. Then, so the executable can find the library at runtime, you need to copy the library file to the board's filesytem. You can either copy to one of the default system library directories, such as `/usr/lib/`, or you can add the `outputs` directory to the `LD_LIBRARY_PATH` environment variable. See how the examples programs are compiled in their [Makefile](https://github.com/bperez77/xilinx_axidma/blob/master/examples/Makefile).
 
+### Generating the Library Documentation
+
+The userspace library has Doxygen documentation for its interface. To generate and view this documentation, run:
+```bash
+make library_docs
+```
+
+This will generate both HTML and Latex documentation for the AXI DMA library under `docs`. This will also open up the HTML documentation in Firefox.
+
 ## Running an Application
 
 Before you run an application that uses the AXI DMA software stack, you must make sure that the driver has been inserted into the kernel. This can be accomplished with:
