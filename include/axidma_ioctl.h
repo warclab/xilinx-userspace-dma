@@ -7,8 +7,6 @@
  * This file contains the IOCTL interface definition. This is the interface from
  * userspace to the AXI DMA device to initiate DMA transactions and get
  * information about AXI DMA devices on the system.
- *
- * @bug No known bugs.
  **/
 
 #ifndef AXIDMA_IOCTL_H_
@@ -34,14 +32,27 @@
 struct dma_chan;
 
 // Direction from the persepctive of the processor
+/**
+ * Enumeration for direction in a DMA transfer.
+ *
+ * The enumeration has two directions: write is from the processor to the
+ * FPGA, and read is from the FPGA to the processor.
+ **/
 enum axidma_dir {
-    AXIDMA_WRITE,                   // Transmits from memory to a device
-    AXIDMA_READ                     // Transmits from a device to memory
+    AXIDMA_WRITE,                   ///< Transmits from memory to a device.
+    AXIDMA_READ                     ///< Transmits from a device to memory.
 };
 
+/**
+ * Enumeration for the type of a DMA channel.
+ *
+ * There are two types of channels, the standard DMA channel, and the special
+ * video DMA (VDMA) channel. The VDMA channel is for transferring frame buffers
+ * and other display related data.
+ **/
 enum axidma_type {
-    AXIDMA_DMA,                     // Standard AXI DMA engine
-    AXIDMA_VDMA                     // Specialized AXI video DMA enginge
+    AXIDMA_DMA,                     ///< Standard AXI DMA engine
+    AXIDMA_VDMA                     ///< Specialized AXI video DMA enginge
 };
 
 // TODO: Channel really should not be here

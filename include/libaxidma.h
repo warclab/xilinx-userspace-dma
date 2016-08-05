@@ -6,8 +6,6 @@
  *
  * This file defines the interface to the AXI DMA device through the AXI DMA
  * library.
- *
- * @bug No known bugs.
  **/
 
 #ifndef LIBAXIDMA_H_
@@ -15,32 +13,249 @@
 
 #include "axidma_ioctl.h"
 
-/* Forward declaration of the AXI DMA device structure. This is an opaque type
- * to the user, so they can only view it as a pointer. */
+/**
+ * The struct representing an AXI DMA device.
+ *
+ * This is an opaque type to the end user, so it can only be used as a pointer
+ * or handle.
+ **/
 struct axidma_dev;
+
+/**
+ * Type definition for an AXI DMA device.
+ *
+ * This is a pointer to an opaque struct, so the user cannot access any of the
+ * internal fields.
+ **/
 typedef struct axidma_dev* axidma_dev_t;
 
-// The type of a callback function for AXI DMA transfer completion
+/**
+ * Type definition for a AXI DMA callback function.
+ *
+ * The callback function is invoked on completion of an asynchronous transfer,
+ * if requested by the user. The library will pass the channel id of the DMA
+ * channel that has finished, and the generic data the user registered.
+ **/
 typedef void (*axidma_cb_t)(int channel_id, void *data);
 
-// Function prototypes for the interface
+/**
+ * Initializes an AXI DMA device, returning a handle to the device.
+ *
+ * There is only one AXI DMA device, since it represents all of the available
+ * channels. Thus, this function should only be invoked once, unless a call has
+ * been made to #axidma_destroy. Otherwise, this function will abort.
+ *
+ * @return A handle to the AXI DMA device on success, NULL on failure.
+ **/
 struct axidma_dev *axidma_init();
+
+/**
+ * Tears down and destroys an AXI DMA device, deallocating its resources.
+ *
+ * @param[in] dev An #axidma_dev_t returned by #axidma_init.
+ **/
 void axidma_destroy(axidma_dev_t dev);
+
+/**
+ * Gets the available AXI DMA transmit channels, returning their channel ID's.
+ *
+ * In our terminology, the "transmit" direction is defined as from the processor
+ * to the FPGA. This function is guaranteed to never fail.
+ *
+ * @param[in] dev An #axidma_dev_t returned by #axidma_init.
+ * @param[out] num_channels The number of AXI DMA transmit channels available.
+ * @return An array of channel ID's of the available AXI DMA transmit channels.
+ *         Contains precisely \p num_channels elements.
+ **/
 int *axidma_get_dma_tx(axidma_dev_t dev, int *num_channels);
+
+/**
+ * Gets the available AXI DMA transmit channels, returning their channel ID's.
+ *
+ * In our terminology, the "receive" direction is defined as from the FPGA to
+ * the processor. This function is guaranteed to never fail.
+ *
+ * @param[in] dev An #axidma_dev_t returned by #axidma_init.
+ * @param[out] num_channels The number of AXI DMA receive channels available.
+ * @return An array of channel ID's of the available AXI DMA receive channels.
+ *         Contains precisely \p num_channels elements.
+ **/
 int *axidma_get_dma_rx(axidma_dev_t dev, int *num_channels);
+
+/**
+ * Allocates DMA buffer suitable for an AXI DMA/VDMA device of \p size bytes.
+ *
+ * This function allocates a DMA buffer that can be shared between the
+ * processor and FPGA and is suitable for high bandwidth transfers. This means
+ * that it is coherent between the FPGA and processor, and is contiguous in
+ * physical memory.
+ *
+ * @param[in] dev An #axidma_dev_t returned by #axidma_init.
+ * @param[in] size The size of the buffer in bytes.
+ * @return The address of buffer on success, NULL on failure.
+ **/
 void *axidma_malloc(axidma_dev_t dev, size_t size);
+
+/**
+ * Frees a DMA buffer previously allocated by #axidma_malloc.
+ *
+ * This function will abort if \p addr is not an address previously returned by
+ * #axidma_malloc, or if \p size does not match the value used when the buffer
+ * was allocated.
+ *
+ * @param[in] dev An #axidma_dev_t returned by #axidma_init.
+ * @param[in] addr Address of the buffer returned by #axidma_malloc.
+ * @param[in] size Size of the buffer passed when it was allocated by
+ *                 #axidma_malloc.
+ **/
 void axidma_free(axidma_dev_t dev, void *addr, size_t size);
+
+/**
+ * Registers a DMA buffer that was allocated externally, by another driver.
+ *
+ * An "external" DMA buffer is a DMA buffer that was allocated by another
+ * driver. For example, you might want to perform DMA transfers on a frame
+ * buffer allocated by a display rendering manager (DRM) driver. Registering
+ * the DMA buffer allows for the AXI DMA device to access it and perform
+ * transfers.
+ *
+ * @param[in] dev An #axidma_dev_t returned by #axidma_init.
+ * @param[in] dmabuf_fd File descriptor corresponding to the buffer. This
+ *                      corresponds to the file descriptor passed to the mmap
+ *                      call that allocated the buffer.
+ * @param[in] user_addr Address of the external buffer.
+ * @param[in] size Size of the buffer in bytes.
+ * @return 0 on success, a negative integer on failure.
+ **/
 int axidma_register_buffer(axidma_dev_t dev, int dmabuf_fd, void *user_addr,
                            size_t size);
+
+/**
+ * Unregisters an external DMA buffer that was previously registered by
+ * #axidma_register_buffer.
+ *
+ * If \p user_addr is not has not been previously registered with a call to
+ * #axidma_register_buffer, then this function will abort.
+ *
+ * @param[in] dev An #axidma_dev_t returned by #axidma_init.
+ * @param[in] user_addr Address of the external buffer. This must have
+ *                      previously been registered wtih a call to
+ *                      #axidma_register_buffer.
+ **/
 void axidma_unregister_buffer(axidma_dev_t dev, void *user_addr);
+
+
+/**
+ * Registers a user callback function to be invoked upon completion of an
+ * asynchronous transfer for the specified DMA channel.
+ *
+ * The callback will be invoked with a POSIX real-time signal, so it will
+ * happen as soon as possible to the completion. The \p data will be passed to
+ * the callback function. This function can never fail.
+ *
+ * @param[in] dev An #axidma_dev_t returned by #axidma_init.
+ * @param[in] channel DMA channel to register the callback for.
+ * @param[in] callback Callback function invoked when the asynchronous transfer
+ *                     completes.
+ * @param[in] data Generic user data that is passed to the callback function.
+ **/
 void axidma_set_callback(axidma_dev_t dev, int channel, axidma_cb_t callback,
-                        void *data);
+                         void *data);
+
+/**
+ * Performs a single DMA transfer in the specified direction on the DMA channel.
+ *
+ * This function will perform a single DMA transfer using the specified buffer.
+ * If wait is false, then this function will be non-blocking, and if the user
+ * registered a callback function, it will be invoked upon completion of the
+ * transfer.
+ *
+ * The addresses \p buf and \p buf+\p len must be within a buffer that was
+ * previously allocated by #axidma_malloc or registered with
+ * #axidma_register_buffer. This function will abort if the channel does not
+ * support the specified direction, or if the channel does not exist.
+ *
+ * @param[in] dev An #axidma_dev_t returned by #axidma_init.
+ * @param[in] dir Direction of the DMA transfer transfer.
+ * @param[in] channel DMA channel the transfer is performed on.
+ * @param[in] buf Address of the DMA buffer to transfer, previously allocated by
+ *                #axidma_malloc or registered with #axidma_register_buffer.
+ * @param[in] len Number of bytes that will be transfered.
+ * @param[in] wait Indicates if the transfer should be synchronous or
+ *                 asynchronous. If true, this function will block.
+ * @return 0 upon success, a negative number on failure.
+ **/
 int axidma_oneway_transfer(axidma_dev_t dev, enum axidma_dir dir, int channel,
                            void *buf, size_t len, bool wait);
+
+/**
+ * Performs a two coupled DMA transfers, one in the receive direction, the other
+ * in the transmit direction.
+ *
+ * This function will perform a receive and transmit DMA transfer using the
+ * specified buffers. If wait is false, the user's callback function will be
+ * invoked on the channels for which a callback was registered.
+ *
+ * This function will abort if either of the specified channels do not exist,
+ * or if the channel does not support the direction requested.
+ *
+ * @param[in] dev An #axidma_dev_t returned by #axidma_init.
+ * @param[in] tx_channel DMA channel the transmit transfer is performed on.
+ * @param[in] tx_buf Address of the DMA buffer to transmit, previously allocated
+ *                   by #axidma_malloc or registered with
+ *                   #axidma_register_buffer.
+ * @param[in] tx_len Number of bytes to transmit from \p tx_buf.
+ * @param[in] rx_channel DMA channel the receive transfer is performed on.
+ * @param[in] rx_buf Address of the DMA buffer to receive, previously allocated
+ *                   by #axidma_malloc or registered with
+ *                   #axidma_register_buffer.
+ * @param[in] rx_len Number of bytes to receive into \p rx_buf.
+ * @param[in] wait Indicates if the transfer should be synchronous or
+ *                 asynchronous. If true, this function will block.
+ * @return 0 upon success, a negative number on failure.
+ **/
 int axidma_twoway_transfer(axidma_dev_t dev, int tx_channel, void *tx_buf,
         size_t tx_len, int rx_channel, void *rx_buf, size_t rx_len, bool wait);
+
+/**
+ * Starts a video DMA (VDMA) transfer on the given DMA channel.
+ *
+ * A video DMA transfer differs from a typical DMA transfer in that it is
+ * cyclic, and ends only when requested by the user. A VDMA transfer will
+ * continuously transmit the frame buffers, transmitting the first buffer,
+ * then the second, etc., and then repeating once the last buffer is reached.
+ *
+ * This function supports an arbitrary number of frame buffers, allowing
+ * for both double-buffering and triple-buffering. This will only transmit
+ * the buffers, the receive direction is not supported.
+ *
+ * @param[in] dev An #axidma_dev_t returned by #axidma_init.
+ * @param[in] display_channel DMA channel the video transfer will take place
+ *                            on. This must be a VDMA channel.
+ * @param[in] width The number of pixels in a row of the frame buffer.
+ * @param[in] height The number rows in the frame buffer.
+ * @param[in] depth The number of bytes in a pixel.
+ * @param[in] frame_buffers A list of frame buffer addresses.
+ * @param[in] num_buffers The number of buffers in \p frame_buffers. This must
+ *                        match the length of the list.
+ * @return 0 upon success, a negative number on failure.
+ **/
 int axidma_video_transfer(axidma_dev_t dev, int display_channel, size_t width,
         size_t height, size_t depth, void **frame_buffers, int num_buffers);
+
+/**
+ * Stops the DMA transfer on specified DMA channel.
+ *
+ * This function stops transfers on either DMA or VDMA channels.
+ *
+ * This function will abort if the channel is invalid, the direction does
+ * not match the channel's supported directions, or if the DMA channel
+ * currently has no running transaction on it.
+ *
+ * @param[in] dev An #axidma_dev_t returned by #axidma_init.
+ * @param[in] channel DMA channel to stop the transfer on.
+ * @param[in] dir The direction of the currently running transfer.
+ **/
 void axidma_stop_transfer(axidma_dev_t dev, int channel, enum axidma_dir dir);
 
 #endif /* LIBAXIDMA_H_ */

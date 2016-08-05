@@ -12,6 +12,9 @@ examples/axidma_transfer
 # The outputs directory, where the generated files are copied
 outputs/
 
+# The docs directory, where generated documentation is stored
+docs/
+
 # The user Makefile configuration file
 config.mk
 
