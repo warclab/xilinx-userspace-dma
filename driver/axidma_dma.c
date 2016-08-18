@@ -12,6 +12,7 @@
 // Kernel dependencies
 #include <linux/delay.h>            // Milliseconds to jiffies converstion
 #include <linux/wait.h>             // Completion related functions
+#include <linux/sched.h>            // Send signal to process function
 #include <linux/dmaengine.h>        // DMA types and functions
 #include <linux/slab.h>             // Allocation functions
 #include <linux/errno.h>            // Linux error codes
