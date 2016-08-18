@@ -1,5 +1,7 @@
 # Xilinx AXI DMA Driver and Library (Quick Start Guide)
 
+[![Build Status](https://travis-ci.org/bperez77/xilinx_axidma.svg?branch=master)](https://travis-ci.org/bperez77/xilinx_axidma)
+
 ## Overview
 
 A zero-copy Linux driver and a userspace interface library for Xilinx's AXI DMA and VDMA IP blocks. The purpose of this software stack is to allow userspace Linux applications to interact with hardware on the FPGA fabric. The driver and userspace library act as a generic layer between the procesor and FPGA, and abstracts away the details of setting up DMA transactions. The pupose of AXI DMA and VDMA is to serve as bridges for communication between the processing system and the FPGA , through one of the DMA ports on the Zynq processing system.
