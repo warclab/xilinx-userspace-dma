@@ -178,7 +178,7 @@ static int axidma_prep_transfer(struct axidma_chan *axidma_chan,
     if (dma_tfr->type == AXIDMA_DMA) {
         axidma_setup_dma_config(&dma_config, axidma_chan);
         config = &dma_config;
-    } else if (dma_tfr->type == AXIDMA_VDMA) {
+    } else {
         axidma_setup_vdma_config(&vdma_config, dma_tfr->vdma_tfr.width,
             dma_tfr->vdma_tfr.height, dma_tfr->vdma_tfr.depth);
         config = &vdma_config;
