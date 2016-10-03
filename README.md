@@ -4,9 +4,9 @@
 
 ## Overview
 
-A zero-copy Linux driver and a userspace interface library for Xilinx's AXI DMA and VDMA IP blocks. The purpose of this software stack is to allow userspace Linux applications to interact with hardware on the FPGA fabric. The driver and userspace library act as a generic layer between the procesor and FPGA, and abstracts away the details of setting up DMA transactions. The pupose of AXI DMA and VDMA is to serve as bridges for communication between the processing system and the FPGA , through one of the DMA ports on the Zynq processing system.
+A zero-copy, high-bandwidth Linux driver and userspace interface library for Xilinx's AXI DMA and VDMA IP blocks. The purpose of this software stack is to allow userspace Linux applications to interact with hardware on the FPGA fabric. The driver and userspace library act as a generic layer between the procesor and FPGA, and abstracts away the details of setting up DMA transactions. The pupose of AXI DMA and VDMA IP blocks is to serve as bridges for communication between the processing system and the FPGA, through one of the DMA ports on the Zynq processing system.
 
-The purpose of the driver is to expose Xilinx's AXI DMA driver to userspace, acting as the interface between them, and to enable userspace to allocate zero-copy, physically contiguous DMA buffers for transfers. The userspace library provides a stable, clean interface to the driver, abstracting the details of specific IOCTL calls away from the application. The driver exposes its functionality via a character device, which the library interacts with.
+The driver enables userspace application to allocate zero-copy, physically contiguous DMA buffers for transfers, allowing for high bandwidth communication between the FPGA and ARM core. The driver exposes its functionality via a character device, which the library interacts with.
 
 This driver supports both 3.x and 4.x version Xilinx kernels. It has been tested with the mainline Xilinx kernel, Xillinux, and the Analog Devices' kernel on the Zedboard. The driver should work with any 3.x or 4.x kernel, and should work with any board that uses a Zynq-7000 series processing system.
 
