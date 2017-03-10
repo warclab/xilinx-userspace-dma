@@ -30,14 +30,14 @@ install:
     - cd ../
 
     - git clone --depth 1 https://github.com/enclustra-bsp/xilinx-linux
-          enclustra_linux
+            -b v1.4 enclustra_linux
     - cd enclustra_linux
     - make xilinx_zynq_defconfig
     - make -j 128 UIMAGE_LOADADDR=0x8000 uImage
     - cd ../
 
     - git clone --depth 1 https://github.com/Xilinx/linux-xlnx
-          -b xilinx-v2013.4 xilinx_linux_3.x
+            -b xilinx-v2013.4 xilinx_linux_3.x
     - cd xilinx_linux_3.x
     - make xilinx_zynq_drm_defconfig
     - make -j 128 UIMAGE_LOADADDR=0x8000 uImage
