@@ -456,13 +456,13 @@ int main(int argc, char **argv)
     // Map memory regions for the transmit and receive buffers
     tx_buf = axidma_malloc(axidma_dev, tx_size);
     if (tx_buf == NULL) {
-        perror("Unable to allocatememory region from AXI DMA device");
+        perror("Unable to allocate transmit buffer from the AXI DMA device.");
         rc = -1;
         goto destroy_axidma;
     }
     rx_buf = axidma_malloc(axidma_dev, rx_size);
-    if (rx_buf == MAP_FAILED) {
-        perror("Unable to allocate memory region from AXI DMA device");
+    if (rx_buf == NULL) {
+        perror("Unable to allocate receive buffer from the AXI DMA device");
         rc = -1;
         goto free_tx_buf;
     }
