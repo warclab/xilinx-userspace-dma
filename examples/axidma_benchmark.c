@@ -15,9 +15,12 @@
  * the a given number of times to calculate the performance statistics. All of
  * these options are configurable from the command line.
  *
- * The program sends a transfer out of the given size, and receives it into a
- * buffer of the same size. It first sends a single transfer to test that this
- * can complete successfully. It then
+ * NOTE: This program assumes that there are only two DMA channels being used by
+ * the PL fabric, one that consumes data and sends it to the PL fabric logic,
+ * and another that sends the output of the PL fabric back to memory. If you
+ * have additional DMA channels, you will need to modify the program. This
+ * program will work with the AXI DMA/VDMA loopback examples (where the S2MM and
+ * MM2S ports are simply connected to one another).
  *
  * @bug No known bugs.
  **/
@@ -38,7 +41,6 @@
 
 #include "libaxidma.h"          // Interface to the AXI DMA
 #include "util.h"               // Miscellaneous utilities
-#include "dma_util.h"           // DMA Utilities
 #include "conversion.h"         // Miscellaneous conversion utilities
 
 /*----------------------------------------------------------------------------
@@ -67,8 +69,10 @@ static void print_usage(bool help)
     FILE* stream = (help) ? stdout : stderr;
     double default_size;
 
-    fprintf(stream, "Usage: axidma_benchmark [-d <transfer size (Mb)>] [-n "
-            "<number transfers>].\n");
+    fprintf(stream, "Usage: axidma_benchmark [-t <DMA tx channel>] "
+            "[-r <DMA rx channel>] [-i <Tx transfer size (MB)>] "
+            "[-b <Tx transfer size (bytes)>] [-o <Rx transfer size (MB)] "
+            "[-s <Rx transfer size (bytes)>] [-n <number transfers>]\n");
     if (!help) {
         return;
     }
@@ -327,29 +331,15 @@ static int single_transfer_test(axidma_dev_t dev, int tx_channel, void *tx_buf,
     // Initialize the buffer region we're going to transmit
     init_data(tx_buf, rx_buf, tx_size, rx_size);
 
-    /* Start all the remainder Tx and Rx transaction in case the main
-     * transaction has any dependencies with them. */
-    rc = start_remainder_transactions(dev, tx_channel, rx_channel, tx_size);
-    if (rc < 0) {
-        fprintf(stderr, "Unable to start remainder transactions.\n");
-        goto stop_rem;
-    }
-
-    // Perform the main transaction
+    // Perform the DMA transaction
     rc = axidma_twoway_transfer(dev, tx_channel, tx_buf, tx_size,
             rx_channel, rx_buf, rx_size, true);
     if (rc < 0) {
-        goto stop_rem;
+        return rc;
     }
 
     // Verify that the data in the buffer changed
-    rc = verify_data(tx_buf, rx_buf, tx_size, rx_size);
-
-    // Stop all the remainder transactions
-stop_rem:
-    stop_remainder_transactions(dev, tx_channel, rx_channel, tx_size);
-
-    return rc;
+    return verify_data(tx_buf, rx_buf, tx_size, rx_size);
 }
 
 
@@ -369,14 +359,6 @@ static int time_dma(axidma_dev_t dev, int tx_channel, void *tx_buf, int tx_size,
     // Begin timing
     gettimeofday(&start_time, NULL);
 
-    /* Start all the remainder Tx and Rx transaction in case the main
-     * transaction has any dependencies with them. */
-    rc = start_remainder_transactions(dev, tx_channel, rx_channel, tx_size);
-    if (rc < 0) {
-        fprintf(stderr, "Unable to start remainder transactions.\n");
-        goto stop_rem;
-    }
-
     // Perform n transfers
     for (i = 0; i < num_transfers; i++)
     {
@@ -385,15 +367,7 @@ static int time_dma(axidma_dev_t dev, int tx_channel, void *tx_buf, int tx_size,
         if (rc < 0) {
             fprintf(stderr, "DMA failed on transfer %d, not reporting timing "
                     "results.\n", i+1);
-            goto stop_rem;
-        }
-
-        rc = dispatch_remainder_transactions(dev, tx_channel, rx_channel,
-                                             tx_size);
-        if (rc < 0) {
-            fprintf(stderr, "Failed to disptach remainder transactions on "
-                    "transfer %d, not reporting timing results.\n", i+1);
-            goto stop_rem;
+            return rc;
         }
     }
 
@@ -412,11 +386,7 @@ static int time_dma(axidma_dev_t dev, int tx_channel, void *tx_buf, int tx_size,
     printf("\tReceive Throughput: %0.2f Mb/s\n", rx_data_rate);
     printf("\tTotal Throughput: %0.2f Mb/s\n", tx_data_rate + rx_data_rate);
 
-    rc = 0;
-
-stop_rem:
-    stop_remainder_transactions(dev, tx_channel, rx_channel, tx_size);
-    return rc;
+    return 0;
 }
 
 /*----------------------------------------------------------------------------

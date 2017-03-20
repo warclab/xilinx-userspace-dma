@@ -28,7 +28,7 @@ EXAMPLES_OUTPUT_EXECUTABLES = $(addprefix $(OUTPUT_DIR)/,$(EXAMPLES_TARGETS))
 
 # The local helper function files used across the example programs.
 UTIL_DIR = $(EXAMPLES_DIR)
-UTIL_FILES = dma_util.c util.c
+UTIL_FILES = util.c
 UTIL = $(addprefix $(UTIL_DIR)/,$(UTIL_FILES))
 
 # Compile at O3 by default, and add debug flags for any debug targets

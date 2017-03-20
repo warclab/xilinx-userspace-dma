@@ -35,7 +35,6 @@
 
 #include "util.h"               // Miscellaneous utilities
 #include "conversion.h"         // Convert bytes to MBs
-#include "dma_util.h"           // DMA helper functions
 #include "libaxidma.h"          // Interface ot the AXI DMA library
 
 /*----------------------------------------------------------------------------
@@ -205,28 +204,6 @@ static int parse_args(int argc, char **argv, char **input_path,
  * DMA File Transfer Functions
  *----------------------------------------------------------------------------*/
 
-static int do_transfer(axidma_dev_t dev, struct dma_transfer *trans)
-{
-    int rc;
-
-    /* Start all the remainder Tx and Rx transaction in case the main
-     * transaction has any dependencies with them. */
-    start_remainder_transactions(dev, trans->input_channel,
-                                 trans->output_channel, trans->input_size);
-
-    // Perform the main transaction
-    rc = axidma_twoway_transfer(dev, trans->input_channel, trans->input_buf,
-            trans->input_size, trans->output_channel, trans->output_buf,
-            trans->output_size, true);
-    if (rc < 0) {
-        fprintf(stderr, "DMA read write transaction failed.\n");
-    }
-
-    // Stop the remainder transactions, and free their memory
-    stop_remainder_transactions(dev, trans->input_channel,
-                                trans->output_channel, trans->input_size);
-    return rc;
-}
 static int transfer_file(axidma_dev_t dev, struct dma_transfer *trans,
                          char *output_path)
 {
@@ -254,8 +231,12 @@ static int transfer_file(axidma_dev_t dev, struct dma_transfer *trans,
     }
 
     // Perform the transfer
-    rc = do_transfer(dev, trans);
+    // Perform the main transaction
+    rc = axidma_twoway_transfer(dev, trans->input_channel, trans->input_buf,
+            trans->input_size, trans->output_channel, trans->output_buf,
+            trans->output_size, true);
     if (rc < 0) {
+        fprintf(stderr, "DMA read write transaction failed.\n");
         goto free_output_buf;
     }
 
