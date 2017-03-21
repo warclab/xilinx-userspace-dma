@@ -1,4 +1,4 @@
-# Makefile
+# library.mk
 #
 # Date: July 28, 2016
 # Author: Brandon Perez

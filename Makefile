@@ -47,9 +47,9 @@ docs: library_docs
 
 # Include the specific targets for the examples, library, and driver (the
 # includes must go here, so the default target is 'all')
-include library/Makefile
+include library/library.mk
 include driver/Makefile
-include examples/Makefile
+include examples/examples.mk
 
 # Make the specified output directory, if it doesn't exist
 $(OUTPUT_DIR):

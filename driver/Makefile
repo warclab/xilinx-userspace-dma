@@ -15,7 +15,7 @@ DRIVER_MAKEFILE_=included
 
 # Get the libaxidma include paths. Make the path absolute so that the
 # kernel's Makefile can include this Makefile.
-include $(PWD)/library/Makefile
+include $(PWD)/library/library.mk
 
 ################################################################################
 # Configuration

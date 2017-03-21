@@ -1,4 +1,4 @@
-# Makefile
+# examples.mk
 #
 # Date: March 6, 2016
 # Author: Brandon Perez
@@ -9,7 +9,7 @@ ifndef EXAMPLES_MAKEFILE_
 EXAMPLES_MAKEFILE_=included
 
 # Get the definitions for the AXI DMA library
-include library/Makefile
+include library/library.mk
 
 ################################################################################
 # Configuration
