@@ -46,7 +46,7 @@ static int axidma_parse_compatible_property(struct device_node *dma_chan_node,
     } else if (of_device_is_compatible(np, "xlnx,axi-vdma-s2mm-channel") > 0) {
         chan->type = AXIDMA_VDMA;
         chan->dir = AXIDMA_READ;
-        dev->num_dma_rx_chans += 1;
+        dev->num_vdma_rx_chans += 1;
     } else if (of_find_property(np, "compatible", NULL) == NULL) {
         axidma_node_err(np, "DMA channel lacks 'compatible' property.\n");
     } else {
