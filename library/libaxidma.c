@@ -34,6 +34,7 @@
 typedef struct dma_channel {
     enum axidma_dir dir;        ///< Direction of the channel
     enum axidma_type type;      ///< Type of the channel
+    int channel_id;             ///< Integer id of the channel.
     axidma_cb_t callback;       ///< Callback function for channel completion
     void *user_data;            ///< User data to pass to the callback
 } dma_channel_t;
@@ -132,6 +133,7 @@ static int categorize_channels(axidma_dev_t dev,
         dma_chan = &dev->channels[i];
         dma_chan->dir = chan->dir;
         dma_chan->type = chan->type;
+        dma_chan->channel_id = chan->channel_id;
         dma_chan->callback = NULL;
         dma_chan->user_data = NULL;
     }
