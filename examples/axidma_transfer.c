@@ -260,11 +260,10 @@ int main(int argc, char **argv)
 {
     int rc;
     char *input_path, *output_path;
-    int num_tx, num_rx;
-    int *tx_chans, *rx_chans;
     axidma_dev_t axidma_dev;
     struct stat input_stat;
     struct dma_transfer trans;
+    array_t *tx_chans, *rx_chans;
 
     // Parse the input arguments
     memset(&trans, 0, sizeof(trans));
@@ -311,14 +310,14 @@ int main(int argc, char **argv)
     }
 
     // Get the tx and rx channels if they're not already specified
-    tx_chans = axidma_get_dma_tx(axidma_dev, &num_tx);
-    if (num_tx < 1) {
+    tx_chans = axidma_get_dma_tx(axidma_dev);
+    if (tx_chans->len < 1) {
         fprintf(stderr, "Error: No transmit channels were found.\n");
         rc = -ENODEV;
         goto destroy_axidma;
     }
-    rx_chans = axidma_get_dma_rx(axidma_dev, &num_rx);
-    if (num_rx < 1) {
+    rx_chans = axidma_get_dma_rx(axidma_dev);
+    if (rx_chans->len < 1) {
         fprintf(stderr, "Error: No receive channels were found.\n");
         rc = -ENODEV;
         goto destroy_axidma;
@@ -327,8 +326,8 @@ int main(int argc, char **argv)
     /* If the user didn't specify the channels, we assume that the transmit and
      * receive channels are the lowest numbered ones. */
     if (trans.input_channel == -1 && trans.output_channel == -1) {
-        trans.input_channel = tx_chans[0];
-        trans.output_channel = rx_chans[0];
+        trans.input_channel = tx_chans->data[0];
+        trans.output_channel = rx_chans->data[0];
     }
     printf("AXI DMA File Transfer Info:\n");
     printf("\tTransmit Channel: %d\n", trans.input_channel);
@@ -338,7 +337,7 @@ int main(int argc, char **argv)
 
     // Transfer the file over the AXI DMA
     rc = transfer_file(axidma_dev, &trans, output_path);
-    rc = (rc < 0) ? 1 : 0;
+    rc = (rc < 0) ? -rc : 0;
 
 destroy_axidma:
     axidma_destroy(axidma_dev);

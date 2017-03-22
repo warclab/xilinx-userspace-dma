@@ -11,6 +11,7 @@
 #ifndef LIBAXIDMA_H_
 #define LIBAXIDMA_H_
 
+// TODO: Remove dependency on this
 #include "axidma_ioctl.h"
 
 /**
@@ -28,6 +29,16 @@ struct axidma_dev;
  * internal fields.
  **/
 typedef struct axidma_dev* axidma_dev_t;
+
+/**
+ * A structure that represents an integer array.
+ *
+ * This is used to give the channel id's to the user in a convenient fashion.
+ **/
+typedef struct array {
+    int len;        ///< Length of the array
+    int *data;      ///< Pointer to the memory buffer for the array
+} array_t;
 
 /**
  * Type definition for a AXI DMA callback function.
@@ -63,11 +74,9 @@ void axidma_destroy(axidma_dev_t dev);
  * to the FPGA. This function is guaranteed to never fail.
  *
  * @param[in] dev An #axidma_dev_t returned by #axidma_init.
- * @param[out] num_channels The number of AXI DMA transmit channels available.
  * @return An array of channel ID's of the available AXI DMA transmit channels.
- *         Contains precisely \p num_channels elements.
  **/
-int *axidma_get_dma_tx(axidma_dev_t dev, int *num_channels);
+array_t *axidma_get_dma_tx(axidma_dev_t dev);
 
 /**
  * Gets the available AXI DMA transmit channels, returning their channel ID's.
@@ -78,9 +87,8 @@ int *axidma_get_dma_tx(axidma_dev_t dev, int *num_channels);
  * @param[in] dev An #axidma_dev_t returned by #axidma_init.
  * @param[out] num_channels The number of AXI DMA receive channels available.
  * @return An array of channel ID's of the available AXI DMA receive channels.
- *         Contains precisely \p num_channels elements.
  **/
-int *axidma_get_dma_rx(axidma_dev_t dev, int *num_channels);
+array_t *axidma_get_dma_rx(axidma_dev_t dev);
 
 /**
  * Allocates DMA buffer suitable for an AXI DMA/VDMA device of \p size bytes.

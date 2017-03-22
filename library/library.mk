@@ -15,7 +15,8 @@ LIBAXIDMA_MAKEFILE_=included
 ################################################################################
 
 # The flags for compiling the library
-LIBAXIDMA_CFLAGS = $(GLOBAL_CFLAGS) -fPIC -shared
+LIBAXIDMA_CFLAGS = $(GLOBAL_CFLAGS) -fPIC -shared \
+				   -Wno-missing-field-initializers
 
 # The files that makeup the AXI DMA library
 LIBAXIDMA_DIR = library

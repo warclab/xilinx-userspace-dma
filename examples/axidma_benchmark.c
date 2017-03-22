@@ -398,11 +398,10 @@ int main(int argc, char **argv)
     int rc;
     int num_transfers;
     int tx_channel, rx_channel;
-    int num_rx, num_tx;
     size_t tx_size, rx_size;
     char *tx_buf, *rx_buf;
-    int *tx_chans, *rx_chans;
     axidma_dev_t axidma_dev;
+    array_t *tx_chans, *rx_chans;
 
     // Check if the user overrided the default transfer size and number
     if (parse_args(argc, argv, &tx_channel, &rx_channel, &tx_size, &rx_size,
@@ -438,14 +437,14 @@ int main(int argc, char **argv)
     }
 
     // Get all the transmit and receive channels
-    tx_chans = axidma_get_dma_tx(axidma_dev, &num_tx);
-    if (num_tx < 1) {
+    tx_chans = axidma_get_dma_tx(axidma_dev);
+    if (tx_chans->len < 1) {
         fprintf(stderr, "Error: No transmit channels were found.\n");
         rc = -ENODEV;
         goto free_rx_buf;
     }
-    rx_chans = axidma_get_dma_rx(axidma_dev, &num_rx);
-    if (num_rx < 1) {
+    rx_chans = axidma_get_dma_rx(axidma_dev);
+    if (rx_chans->len < 1) {
         fprintf(stderr, "Error: No receive channels were found.\n");
         rc = -ENODEV;
         goto free_rx_buf;
@@ -454,8 +453,8 @@ int main(int argc, char **argv)
     /* If the user didn't specify the channels, we assume that the transmit and
      * receive channels are the lowest numbered ones. */
     if (tx_channel == -1 && rx_channel == -1) {
-        tx_channel = tx_chans[0];
-        rx_channel = rx_chans[0];
+        tx_channel = tx_chans->data[0];
+        rx_channel = rx_chans->data[0];
     }
     printf("Using transmit channel %d and receive channel %d.\n", tx_channel,
            rx_channel);
