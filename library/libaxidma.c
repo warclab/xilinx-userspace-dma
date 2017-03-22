@@ -234,31 +234,21 @@ static int setup_dma_callback(axidma_dev_t dev)
     return 0;
 }
 
-// Checks that the given channel id corresponds to an actual channel
-static bool channel_exists(axidma_dev_t dev, int channel)
+// Finds the DMA channel with the given id
+static dma_channel_t *find_channel(axidma_dev_t dev, int channel_id)
 {
-    return 0 <= channel && channel < dev->num_channels;
-}
-
-// Checks that the given channel is a valid id, searching through the arrays
-static bool valid_channel(axidma_dev_t dev, int channel,
-                          enum axidma_dir dir)
-{
+    int i;
     dma_channel_t *dma_chan;
 
-    // Check that the enumeration is sound
-    if (!(dir == AXIDMA_WRITE || dir == AXIDMA_READ)) {
-        return false;
+    for (i = 0; i < dev->num_channels; i++)
+    {
+        dma_chan = &dev->channels[i];
+        if (dma_chan->channel_id == channel_id) {
+            return dma_chan;
+        }
     }
 
-    // Check that the channel exists
-    if (!channel_exists(dev, channel)) {
-        return false;
-    }
-
-    // Verify that the given channel is the same direction
-    dma_chan = &dev->channels[channel];
-    return dma_chan->dir == dir;
+    return NULL;
 }
 
 // Converts the AXI DMA direction to the corresponding ioctl for the transfer
@@ -398,7 +388,7 @@ void axidma_set_callback(axidma_dev_t dev, int channel, axidma_cb_t callback,
 {
     dma_channel_t *chan;
 
-    assert(channel_exists(dev, channel));
+    assert(find_channel(dev, channel) != NULL);
 
     chan = &dev->channels[channel];
     chan->callback = callback;
@@ -458,8 +448,7 @@ int axidma_oneway_transfer(axidma_dev_t dev, enum axidma_dir dir, int channel,
     unsigned long axidma_cmd;
 
     assert(dir == AXIDMA_READ || dir == AXIDMA_WRITE);
-    assert(dir != AXIDMA_READ || valid_channel(dev, channel, AXIDMA_READ));
-    assert(dir != AXIDMA_WRITE || valid_channel(dev, channel, AXIDMA_WRITE));
+    assert(find_channel(dev, channel) != NULL);
 
     // Setup the argument structure to the IOCTL
     trans.wait = wait;
@@ -486,8 +475,10 @@ int axidma_twoway_transfer(axidma_dev_t dev, int tx_channel, void *tx_buf,
     int rc;
     struct axidma_inout_transaction trans;
 
-    assert(valid_channel(dev, tx_channel, AXIDMA_WRITE));
-    assert(valid_channel(dev, rx_channel, AXIDMA_READ));
+    assert(find_channel(dev, tx_channel) != NULL);
+    assert(find_channel(dev, tx_channel)->dir == AXIDMA_WRITE);
+    assert(find_channel(dev, rx_channel) != NULL);
+    assert(find_channel(dev, rx_channel)->dir == AXIDMA_READ);
 
     // Setup the argument structure for the IOCTL
     trans.wait = wait;
@@ -517,7 +508,8 @@ int axidma_video_transfer(axidma_dev_t dev, int display_channel, size_t width,
     int rc;
     struct axidma_video_transaction trans;
 
-    assert(valid_channel(dev, display_channel, AXIDMA_WRITE));
+    assert(find_channel(dev, display_channel) != NULL);
+    assert(find_channel(dev, display_channel)->dir == AXIDMA_WRITE);
 
     // Setup the argument structure for the IOCTL
     trans.channel_id = display_channel;
@@ -544,8 +536,7 @@ void axidma_stop_transfer(axidma_dev_t dev, int channel, enum axidma_dir dir)
     struct axidma_chan chan;
 
     assert(dir == AXIDMA_READ || dir == AXIDMA_WRITE);
-    assert(dir != AXIDMA_READ || valid_channel(dev, channel, AXIDMA_READ));
-    assert(dir != AXIDMA_WRITE || valid_channel(dev, channel, AXIDMA_WRITE));
+    assert(find_channel(dev, channel) != NULL);
 
     // Setup the argument structure for the IOCTL
     chan.channel_id = channel;
