@@ -401,7 +401,7 @@ int main(int argc, char **argv)
     size_t tx_size, rx_size;
     char *tx_buf, *rx_buf;
     axidma_dev_t axidma_dev;
-    array_t *tx_chans, *rx_chans;
+    const array_t *tx_chans, *rx_chans;
 
     // Check if the user overrided the default transfer size and number
     if (parse_args(argc, argv, &tx_channel, &rx_channel, &tx_size, &rx_size,

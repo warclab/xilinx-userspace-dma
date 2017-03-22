@@ -124,13 +124,13 @@ void axidma_destroy(axidma_dev_t dev)
 }
 
 // Returns an array of all the available AXI DMA transmit channels
-array_t *axidma_get_dma_tx(axidma_dev_t dev)
+const array_t *axidma_get_dma_tx(axidma_dev_t dev)
 {
     return &dev->dma_tx_chans;
 }
 
 // Returns an array of all the available AXI DMA receive channels
-array_t *axidma_get_dma_rx(axidma_dev_t dev)
+const array_t *axidma_get_dma_rx(axidma_dev_t dev)
 {
     return &dev->dma_rx_chans;
 }

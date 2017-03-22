@@ -263,7 +263,7 @@ int main(int argc, char **argv)
     axidma_dev_t axidma_dev;
     struct stat input_stat;
     struct dma_transfer trans;
-    array_t *tx_chans, *rx_chans;
+    const array_t *tx_chans, *rx_chans;
 
     // Parse the input arguments
     memset(&trans, 0, sizeof(trans));

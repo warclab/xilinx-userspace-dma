@@ -76,7 +76,7 @@ void axidma_destroy(axidma_dev_t dev);
  * @param[in] dev An #axidma_dev_t returned by #axidma_init.
  * @return An array of channel ID's of the available AXI DMA transmit channels.
  **/
-array_t *axidma_get_dma_tx(axidma_dev_t dev);
+const array_t *axidma_get_dma_tx(axidma_dev_t dev);
 
 /**
  * Gets the available AXI DMA transmit channels, returning their channel ID's.
@@ -88,7 +88,7 @@ array_t *axidma_get_dma_tx(axidma_dev_t dev);
  * @param[out] num_channels The number of AXI DMA receive channels available.
  * @return An array of channel ID's of the available AXI DMA receive channels.
  **/
-array_t *axidma_get_dma_rx(axidma_dev_t dev);
+const array_t *axidma_get_dma_rx(axidma_dev_t dev);
 
 /**
  * Allocates DMA buffer suitable for an AXI DMA/VDMA device of \p size bytes.
