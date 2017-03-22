@@ -440,22 +440,23 @@ void axidma_unregister_buffer(axidma_dev_t dev, void *user_addr)
 
 /* This performs a one-way transfer over AXI DMA, the direction being specified
  * by the user. The user determines if this is blocking or not with `wait. */
-int axidma_oneway_transfer(axidma_dev_t dev, enum axidma_dir dir, int channel,
-                           void *buf, size_t len, bool wait)
+int axidma_oneway_transfer(axidma_dev_t dev, int channel, void *buf,
+        size_t len, bool wait)
 {
     int rc;
     struct axidma_transaction trans;
     unsigned long axidma_cmd;
+    dma_channel_t *dma_chan;
 
-    assert(dir == AXIDMA_READ || dir == AXIDMA_WRITE);
     assert(find_channel(dev, channel) != NULL);
 
     // Setup the argument structure to the IOCTL
+    dma_chan = find_channel(dev, channel);
     trans.wait = wait;
     trans.channel_id = channel;
     trans.buf = buf;
     trans.buf_len = len;
-    axidma_cmd = dir_to_ioctl(dir);
+    axidma_cmd = dir_to_ioctl(dma_chan->dir);
 
     // Perform the given transfer
     rc = ioctl(dev->fd, axidma_cmd, &trans);
@@ -531,17 +532,18 @@ int axidma_video_transfer(axidma_dev_t dev, int display_channel, size_t width,
 /* This function stops all transfers on the given channel with the given
  * direction. This function is required to stop any video transfers, or any
  * non-blocking transfers. */
-void axidma_stop_transfer(axidma_dev_t dev, int channel, enum axidma_dir dir)
+void axidma_stop_transfer(axidma_dev_t dev, int channel)
 {
     struct axidma_chan chan;
+    dma_channel_t *dma_chan;
 
-    assert(dir == AXIDMA_READ || dir == AXIDMA_WRITE);
     assert(find_channel(dev, channel) != NULL);
 
     // Setup the argument structure for the IOCTL
+    dma_chan = find_channel(dev, channel);
     chan.channel_id = channel;
-    chan.dir = dir;
-    chan.type = AXIDMA_DMA;
+    chan.dir = dma_chan->dir;
+    chan.type = dma_chan->type;
 
     // Stop all transfers on the given DMA channel
     if (ioctl(dev->fd, AXIDMA_STOP_DMA_CHANNEL, &chan) < 0) {

@@ -11,9 +11,6 @@
 #ifndef LIBAXIDMA_H_
 #define LIBAXIDMA_H_
 
-// TODO: Remove dependency on this
-#include "axidma_ioctl.h"
-
 /**
  * The struct representing an AXI DMA device.
  *
@@ -201,11 +198,9 @@ void axidma_set_callback(axidma_dev_t dev, int channel, axidma_cb_t callback,
  *
  * The addresses \p buf and \p buf+\p len must be within a buffer that was
  * previously allocated by #axidma_malloc or registered with
- * #axidma_register_buffer. This function will abort if the channel does not
- * support the specified direction, or if the channel does not exist.
+ * #axidma_register_buffer. This function will abort if the channel is invalid.
  *
  * @param[in] dev An #axidma_dev_t returned by #axidma_init.
- * @param[in] dir Direction of the DMA transfer transfer.
  * @param[in] channel DMA channel the transfer is performed on.
  * @param[in] buf Address of the DMA buffer to transfer, previously allocated by
  *                #axidma_malloc or registered with #axidma_register_buffer.
@@ -214,8 +209,8 @@ void axidma_set_callback(axidma_dev_t dev, int channel, axidma_cb_t callback,
  *                 asynchronous. If true, this function will block.
  * @return 0 upon success, a negative number on failure.
  **/
-int axidma_oneway_transfer(axidma_dev_t dev, enum axidma_dir dir, int channel,
-                           void *buf, size_t len, bool wait);
+int axidma_oneway_transfer(axidma_dev_t dev, int channel, void *buf, size_t len,
+        bool wait);
 
 /**
  * Performs a two coupled DMA transfers, one in the receive direction, the other
@@ -277,14 +272,12 @@ int axidma_video_transfer(axidma_dev_t dev, int display_channel, size_t width,
  *
  * This function stops transfers on either DMA or VDMA channels.
  *
- * This function will abort if the channel is invalid, the direction does
- * not match the channel's supported directions, or if the DMA channel
+ * This function will abort if the channel is invalid, or if the DMA channel
  * currently has no running transaction on it.
  *
  * @param[in] dev An #axidma_dev_t returned by #axidma_init.
  * @param[in] channel DMA channel to stop the transfer on.
- * @param[in] dir The direction of the currently running transfer.
  **/
-void axidma_stop_transfer(axidma_dev_t dev, int channel, enum axidma_dir dir);
+void axidma_stop_transfer(axidma_dev_t dev, int channel);
 
 #endif /* LIBAXIDMA_H_ */
