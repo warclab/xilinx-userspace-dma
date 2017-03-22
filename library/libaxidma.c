@@ -135,6 +135,18 @@ const array_t *axidma_get_dma_rx(axidma_dev_t dev)
     return &dev->dma_rx_chans;
 }
 
+// Returns an array of all the available AXI VDMA transmit channels
+const array_t *axidma_get_vdma_tx(axidma_dev_t dev)
+{
+    return &dev->vdma_tx_chans;
+}
+
+// Returns an array of all the available AXI VDMA receive channels
+const array_t *axidma_get_vdma_rx(axidma_dev_t dev)
+{
+    return &dev->vdma_rx_chans;
+}
+
 /* Allocates a region of memory suitable for use with the AXI DMA driver. Note
  * that this is a quite expensive operation, and should be done at initalization
  * time. */

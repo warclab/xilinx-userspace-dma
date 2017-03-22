@@ -85,10 +85,31 @@ const array_t *axidma_get_dma_tx(axidma_dev_t dev);
  * the processor. This function is guaranteed to never fail.
  *
  * @param[in] dev An #axidma_dev_t returned by #axidma_init.
- * @param[out] num_channels The number of AXI DMA receive channels available.
  * @return An array of channel ID's of the available AXI DMA receive channels.
  **/
 const array_t *axidma_get_dma_rx(axidma_dev_t dev);
+
+/**
+ * Gets the available AXI VDMA transmit channels, returning their channel ID's.
+ *
+ * In our terminology, the "transmit" direction is defined as from the processor
+ * to the FPGA. This function is guaranteed to never fail.
+ *
+ * @param[in] dev An #axidma_dev_t returned by #axidma_init.
+ * @return An array of channel ID's of the available AXI VDMA transmit channels.
+ **/
+const array_t *axidma_get_vdma_tx(axidma_dev_t dev);
+
+/**
+ * Gets the available AXI VDMA receive channels, returning their channel ID's.
+ *
+ * In our terminology, the "receive" direction is defined as from the FPGA to
+ * the processor. This function is guaranteed to never fail.
+ *
+ * @param[in] dev An #axidma_dev_t returned by #axidma_init.
+ * @return An array of channel ID's of the available AXI VDMA receive channels.
+ **/
+const array_t *axidma_get_vdma_rx(axidma_dev_t dev);
 
 /**
  * Allocates DMA buffer suitable for an AXI DMA/VDMA device of \p size bytes.
