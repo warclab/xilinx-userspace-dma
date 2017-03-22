@@ -57,8 +57,9 @@ axi_dma_0: axidma0@40400000 {
     compatible = "xlnx,axi-dma", "xlnx,axi-dma-6.03.a", "xlnx,axi-dma-1.00.a";
     reg = <0x40400000 0x10000>;
     clocks = <&clkc 15>, <&clkc 15>, <&clkc 15>, <&clkc 15>;
-    clock-names = "s_axi_lite_aclk", "m_axi_sg_aclk", "m_axi_mm2s_aclk", "m_axi_s2mm_aclk";
+    clock-names = "s_axi_lite_aclk", "m_axi_sg_aclk", "m_axi_mm2s_aclk", "m_axi_s2mm_aclk";    
     xlnx,include-sg;    
+    xlnx,addrwidth = <32>;
 
     dma-mm2s-channel@40400000 {
         compatible = "xlnx,axi-dma-mm2s-channel";
@@ -68,6 +69,7 @@ axi_dma_0: axidma0@40400000 {
         interrupt-parent = <&intc>;
         interrupts = <0 29 4>;
     };
+    
     dma-s2mm-channel@40400000 {
         compatible = "xlnx,axi-dma-s2mm-channel";
         dma-channels = <1>;
