@@ -14,9 +14,8 @@ LIBAXIDMA_MAKEFILE_=included
 # Configuration
 ################################################################################
 
-# The flags for compiling the library, add debug flags if specified.
+# The flags for compiling the library
 LIBAXIDMA_CFLAGS = $(GLOBAL_CFLAGS) -fPIC -shared
-library_debug: LIBAXIDMA_CFLAGS = $(GLOBAL_CFLAGS) -fPIC -shared -g -O0
 
 # The files that makeup the AXI DMA library
 LIBAXIDMA_DIR = library
@@ -42,10 +41,10 @@ LIBAXIDMA_DOC = $(DOC_DIR)/html/index.html
 # Targets
 ################################################################################
 
-.PHONY: library library_debug library_docs library_clean
+.PHONY: library library library_docs library_clean
 
-# User-facing targets for compiling the driver with and without debug mode
-library library_debug: $(LIBAXIDMA_OUTPUT_LIBRARY)
+# User-facing targets for compiling the library
+library: $(LIBAXIDMA_OUTPUT_LIBRARY)
 
 # Compile the library into a shared library file
 $(LIBAXIDMA_LIBRARY): $(LIBAXIDMA) $(LIBAXIDMA_INC) | cross_compiler_check

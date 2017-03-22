@@ -61,11 +61,11 @@ export AXIDMA_INC_DIRS = $(PWD)/$(LIBAXIDMA_INC_DIRS)
 ################################################################################
 
 # These targets don't correspond to actual generated files
-.PHONY: driver driver_debug driver_clean kbuild_def_check arch_def_check \
+.PHONY: driver driver_clean kbuild_def_check arch_def_check \
 		kbuild_exists_check kbuild_built_check
 
-# User-facing targets for compiling the driver with and without debug mode
-driver driver_debug: $(DRIVER_OUTPUT_OBJECT)
+# User-facing targets for compiling the driver
+driver: $(DRIVER_OUTPUT_OBJECT)
 
 # Compile the driver against the given kernel. The check targets are phony, so
 # don't force this target to run because of them.

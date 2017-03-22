@@ -21,7 +21,6 @@ EXAMPLES_FILES = axidma_benchmark.c axidma_display_image.c axidma_transfer.c
 
 # The variations of specific targets for the example programs
 EXAMPLES_TARGETS = $(EXAMPLES_FILES:%.c=%)
-EXAMPLES_DEBUG_TARGETS = $(addsuffix _debug,$(EXAMPLES_TARGETS))
 EXAMPLES_CLEAN_TARGETS = $(addsuffix _clean,$(EXAMPLES_TARGETS))
 EXAMPLES_EXECUTABLES = $(addprefix $(EXAMPLES_DIR)/,$(EXAMPLES_TARGETS))
 EXAMPLES_OUTPUT_EXECUTABLES = $(addprefix $(OUTPUT_DIR)/,$(EXAMPLES_TARGETS))
@@ -31,9 +30,8 @@ UTIL_DIR = $(EXAMPLES_DIR)
 UTIL_FILES = util.c
 UTIL = $(addprefix $(UTIL_DIR)/,$(UTIL_FILES))
 
-# Compile at O3 by default, and add debug flags for any debug targets
-EXAMPLES_CFLAGS = $(GLOBAL_CFLAGS) -O3
-debug $(EXAMPLES_DEBUG_TARGETS): EXAMPLES_CFLAGS = $(GLOBAL_CFLAGS) -g -O0
+# The compiler flags used to compile the examples
+EXAMPLES_CFLAGS = $(GLOBAL_CFLAGS)
 
 # Set the example executables to link against the AXI DMA shared library in
 # the outputs directory
@@ -46,19 +44,18 @@ EXAMPLES_LIB_FLAGS = -L $(OUTPUT_DIR) -l $(LIBAXIDMA_NAME) \
 ################################################################################
 
 # These targets don't correspond to actual generated files
-.PHONY: all examples examples_debug examples_clean $(EXAMPLES_TARGETS) \
-		$(EXAMPLES_DEBUG_TARGETS) $(EXAMPLES_CLEAN_TARGETS)
+.PHONY: all examples examples_clean $(EXAMPLES_TARGETS) \
+		$(EXAMPLES_CLEAN_TARGETS)
 
 # Allow for secondary expansion in prerequisite lists. This allows for automatic
 # variables (e.g. $@, $^, etc.) to be used in prerequisite lists.
 .SECONDEXPANSION:
 
 # Build all of the example files
-examples examples_debug: $(EXAMPLES_TARGETS)
+examples: $(EXAMPLES_TARGETS)
 
-# User-facing targets for compiling examples with and without debug mode
+# User-facing targets for compiling examples
 $(EXAMPLES_TARGETS): $(OUTPUT_DIR)/$$@
-$(EXAMPLES_DEBUG_TARGETS): $(OUTPUT_DIR)/$$(patsubst %_debug,%,$$@)
 
 # Compile a given example into an executable. This target does not need re-run
 # because of the check target nor the AXI DMA shared library object.
@@ -77,6 +74,6 @@ examples_clean: $(EXAMPLES_CLEAN_TARGETS)
 
 # Clean a specific example by deleting both copies of the executable
 $(EXAMPLES_CLEAN_TARGETS):
-	rm -f $(OUTPUT_DIR)/$(@:%_clean=%) $(EXAMPLES_DIR)/$(@:%_clean=%)
+	rm -f $(EXAMPLES_OUTPUT_EXECUTABLES) $(EXAMPLES_EXECUTABLES)
 
 endif # EXAMPLES_MAKEFILE_
