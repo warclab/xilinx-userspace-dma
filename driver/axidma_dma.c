@@ -104,22 +104,22 @@ static int axidma_init_sg_entry(struct axidma_device *dev,
 }
 
 static struct axidma_chan *axidma_get_chan(struct axidma_device *dev,
-    int chan_id, enum axidma_type chan_type, enum axidma_dir chan_dir)
+    int channel_id, enum axidma_type type, enum axidma_dir dir)
 {
+    int i;
     struct axidma_chan *chan;
 
-    // Check that the channel id is in range
-    if (chan_id < 0 || chan_id >= dev->num_chans) {
-        return NULL;
+    // Find the channel with the given ID that matches the type and direction
+    for (i = 0; i < dev->num_chans; i++)
+    {
+        chan = &dev->channels[i];
+        if (chan->channel_id == channel_id && chan->type == type &&
+                chan->dir == dir) {
+            return chan;
+        }
     }
 
-    // Verify that the channel is of the proper type
-    chan = &dev->channels[chan_id];
-    if (chan->type != chan_type || chan->dir != chan_dir) {
-        return NULL;
-    }
-
-    return chan;
+    return NULL;
 }
 
 static void axidma_dma_callback(void *data)
