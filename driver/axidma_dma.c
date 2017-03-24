@@ -31,9 +31,6 @@
 // The default timeout for DMA is 10 seconds
 #define AXIDMA_DMA_TIMEOUT      10000
 
-// The maximum permitted ID for a DMA channel
-#define AXIDMA_MAX_ID           100
-
 // A convenient structure to pass between prep and start transfer functions
 struct axidma_transfer {
     int sg_len;                     // The length of the BD array
