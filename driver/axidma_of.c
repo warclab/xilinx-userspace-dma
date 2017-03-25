@@ -16,7 +16,6 @@
 
 // Local Dependencies
 #include "axidma.h"                 // Internal Definitions
-#include "version_portability.h"    // Deals with 3.x versus 4.x Linux
 
 /*----------------------------------------------------------------------------
  * Internal Helper Functions

@@ -19,10 +19,19 @@
 #include <linux/platform_device.h>  // Platform device definitions
 #include <linux/device.h>           // Device definitions and functions
 
+/* Between 3.x and 4.x, the path to Xilinx's DMA include file changes. However,
+ * in some 4.x kernels, the path is still the old one from 3.x. The macro is
+ * defined by the Makefile, when specified by the user. */
+#ifndef XILINX_DMA_INCLUDE_PATH_FIXUP
+#include <linux/dma/xilinx_dma.h>   // Xilinx DMA config structures
+#else
+#include <linux/amba/xilinx_dma.h>  // Xilinx DMA config structures
+#endif
+
+
 // Local dependencies
 #include "axidma.h"                 // Internal definitions
 #include "axidma_ioctl.h"           // IOCTL interface definition and types
-#include "version_portability.h"    // Deals with 3.x versus 4.x Linux
 
 /*----------------------------------------------------------------------------
  * Internal Definitions
@@ -77,6 +86,13 @@ static char *axidma_type_to_string(enum axidma_type dma_type)
 {
     BUG_ON(dma_type != AXIDMA_DMA && dma_type != AXIDMA_VDMA);
     return (dma_type == AXIDMA_DMA) ? "DMA" : "VDMA";
+}
+
+// Convert the AXI DMA direction enumeration to a DMA direction enumeration
+static enum dma_transfer_direction axidma_to_dma_dir(enum axidma_dir dma_dir)
+{
+    BUG_ON(dma_dir != AXIDMA_WRITE && dma_dir != AXIDMA_READ);
+    return (dma_dir == AXIDMA_WRITE) ? DMA_MEM_TO_DEV : DMA_DEV_TO_MEM;
 }
 
 /*----------------------------------------------------------------------------
@@ -141,6 +157,22 @@ static void axidma_dma_callback(void *data)
     }
 }
 
+// Setup the config structure for VDMA
+static void axidma_setup_vdma_config(struct xilinx_vdma_config *dma_config)
+{
+    dma_config->frm_dly = 0;            // Number of frames to delay
+    dma_config->gen_lock = 0;           // No genlock, VDMA runs freely
+    dma_config->master = 0;             // VDMA is the genlock master
+    dma_config->frm_cnt_en = 0;         // No interrupts based on frame count
+    dma_config->park = 0;               // Continuously process all frames
+    dma_config->park_frm = 0;           // Frame to stop (park) at (N/A)
+    dma_config->coalesc = 0;            // No transfer completion interrupts
+    dma_config->delay = 0;              // Disable the delay counter interrupt
+    dma_config->reset = 0;              // Don't reset the channel
+    dma_config->ext_fsync = 0;          // VDMA handles synchronizes itself
+    return;
+}
+
 static int axidma_prep_transfer(struct axidma_chan *axidma_chan,
                                 struct axidma_transfer *dma_tfr)
 {
@@ -149,9 +181,7 @@ static int axidma_prep_transfer(struct axidma_chan *axidma_chan,
     struct dma_async_tx_descriptor *dma_txnd;
     struct completion *dma_comp;
     struct xilinx_vdma_config vdma_config;
-    struct xilinx_dma_config dma_config;
     struct axidma_cb_data *cb_data;
-    void *config;
     enum dma_transfer_direction dma_dir;
     enum dma_ctrl_flags dma_flags;
     struct scatterlist *sg_list;
@@ -171,28 +201,19 @@ static int axidma_prep_transfer(struct axidma_chan *axidma_chan,
     type = axidma_type_to_string(dma_tfr->type);
     cb_data = dma_tfr->cb_data;
 
-    // Setup the configuration structure based on whether it's DMA or VDMA
-    if (dma_tfr->type == AXIDMA_DMA) {
-        axidma_setup_dma_config(&dma_config, axidma_chan);
-        config = &dma_config;
-    } else {
-        axidma_setup_vdma_config(&vdma_config, dma_tfr->vdma_tfr.width,
-            dma_tfr->vdma_tfr.height, dma_tfr->vdma_tfr.depth);
-        config = &vdma_config;
-    }
-
-    /* Certain versions of the Xilinx DMA drivers may not implement the channel
-     * configuration function, so allow for this case. */
-    rc = dmaengine_slave_config(chan, (struct dma_slave_config *)config);
-    if (rc < 0 && rc != -ENOSYS) {
-        axidma_err("Device control for the %s %s channel failed.\n", type,
-                   direction);
-        goto stop_dma;
+    // If it's a VDMA transaction, configure it based on a default
+    if (dma_tfr->type == AXIDMA_VDMA) {
+        axidma_setup_vdma_config(&vdma_config);
+        rc = xilinx_vdma_channel_set_config(chan, &vdma_config);
+        if (rc < 0) {
+            axidma_err("Unable to set the config for channel.\n");
+            goto stop_dma;
+        }
     }
 
     /* Configure the engine to send an interrupt acknowledgement upon
      * completion, and skip unmapping the buffer. */
-    dma_flags = DMA_CTRL_ACK | DMA_COMPL_SKIP_DEST_UNMAP | DMA_PREP_INTERRUPT;
+    dma_flags = DMA_CTRL_ACK | DMA_PREP_INTERRUPT;
     dma_txnd = dmaengine_prep_slave_sg(chan, sg_list, sg_len, dma_dir,
                                        dma_flags);
     if (dma_txnd == NULL) {
@@ -265,7 +286,7 @@ static int axidma_start_transfer(struct axidma_chan *chan,
             axidma_err("%s %s transaction timed out.\n", type, direction);
             rc = -ETIME;
             goto stop_dma;
-        } else if (status != DMA_SUCCESS) {
+        } else if (status != DMA_COMPLETE) {
             axidma_err("%s %s transaction did not succceed. Status is %d.\n",
                        type, direction, status);
             rc = -EBUSY;
@@ -607,10 +628,10 @@ static int axidma_request_channels(struct platform_device *pdev,
     for (i = 0; i < dev->num_chans; i++)
     {
         chan = &dev->channels[i];
-        chan->chan = axidma_reserve_channel(pdev, chan);
-        if (IS_ERR(chan->chan)) {
+        chan->chan = dma_request_slave_channel(&pdev->dev, chan->name);
+        if (chan == NULL) {
             axidma_err("Unable to get slave channel %d: %s.\n", i, chan->name);
-            rc = PTR_ERR(chan);
+            rc = -ENODEV;
             goto release_channels;
         }
         num_reserved_chans += 1;
