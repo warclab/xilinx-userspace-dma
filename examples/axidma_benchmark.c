@@ -69,7 +69,7 @@ static void print_usage(bool help)
     FILE* stream = (help) ? stdout : stderr;
     double default_size;
 
-    fprintf(stream, "Usage: axidma_benchmark [-t <DMA tx channel>] "
+    fprintf(stream, "Usage: axidma_benchmark [-v] [-t <DMA tx channel>] "
             "[-r <DMA rx channel>] [-i <Tx transfer size (MB)>] "
             "[-b <Tx transfer size (bytes)>] [-o <Rx transfer size (MB)] "
             "[-s <Rx transfer size (bytes)>] [-n <number transfers>]\n");
@@ -78,6 +78,8 @@ static void print_usage(bool help)
     }
 
     default_size = BYTE_TO_MB(DEFAULT_TRANSFER_SIZE);
+    fprintf(stream, "\t-v:\t\t\t\tUse the AXI VDMA channels instead of AXI DMA "
+            "ones for the transfer.\n");
     fprintf(stream, "\t-t <DMA tx channel>:\t\t\tThe device id of the DMA "
             "channel to use for transmitting the data to the PL fabric.\n");
     fprintf(stream, "\t-r <DMA rx channel>:\t\t\tThe device id of the DMA "
@@ -103,23 +105,28 @@ static void print_usage(bool help)
 /* Parses the command line arguments overriding the default transfer sizes,
  * and number of transfer to use for the benchmark if specified. */
 static int parse_args(int argc, char **argv, int *tx_channel, int *rx_channel,
-        size_t *tx_size, size_t *rx_size, int *num_transfers)
+        size_t *tx_size, size_t *rx_size, int *num_transfers, bool *use_vdma)
 {
     double double_arg;
     int int_arg;
     char option;
 
     // Set the default data size and number of transfers
+    *use_vdma = false;
     *tx_channel = -1;
     *rx_channel = -1;
     *tx_size = DEFAULT_TRANSFER_SIZE;
     *rx_size = DEFAULT_TRANSFER_SIZE;
     *num_transfers = DEFAULT_NUM_TRANSFERS;
 
-    while ((option = getopt(argc, argv, "t:r:i:b:o:s:n:h")) != (char)-1)
+    while ((option = getopt(argc, argv, "vt:r:i:b:o:s:n:h")) != (char)-1)
     {
         switch (option)
         {
+            case 'v':
+                *use_vdma = true;
+                break;
+
             // Parse the transmit channel argument
             case 't':
                 if (parse_int(option, optarg, &int_arg) < 0) {
@@ -399,13 +406,14 @@ int main(int argc, char **argv)
     int num_transfers;
     int tx_channel, rx_channel;
     size_t tx_size, rx_size;
+    bool use_vdma;
     char *tx_buf, *rx_buf;
     axidma_dev_t axidma_dev;
     const array_t *tx_chans, *rx_chans;
 
     // Check if the user overrided the default transfer size and number
     if (parse_args(argc, argv, &tx_channel, &rx_channel, &tx_size, &rx_size,
-                   &num_transfers) < 0) {
+                   &num_transfers, &use_vdma) < 0) {
         rc = 1;
         goto ret;
     }
@@ -437,13 +445,18 @@ int main(int argc, char **argv)
     }
 
     // Get all the transmit and receive channels
-    tx_chans = axidma_get_dma_tx(axidma_dev);
+    if (use_vdma) {
+        tx_chans = axidma_get_vdma_tx(axidma_dev);
+        rx_chans = axidma_get_vdma_rx(axidma_dev);
+    } else {
+        tx_chans = axidma_get_dma_tx(axidma_dev);
+        rx_chans = axidma_get_dma_rx(axidma_dev);
+    }
     if (tx_chans->len < 1) {
         fprintf(stderr, "Error: No transmit channels were found.\n");
         rc = -ENODEV;
         goto free_rx_buf;
     }
-    rx_chans = axidma_get_dma_rx(axidma_dev);
     if (rx_chans->len < 1) {
         fprintf(stderr, "Error: No receive channels were found.\n");
         rc = -ENODEV;
@@ -466,7 +479,6 @@ int main(int argc, char **argv)
         goto free_rx_buf;
     }
     printf("Single transfer test successfully completed!\n");
-
 
     // Time the DMA eingine
     printf("Beginning performance analysis of the DMA engine.\n\n");

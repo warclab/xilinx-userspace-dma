@@ -120,7 +120,7 @@ static int axidma_init_sg_entry(struct axidma_device *dev,
 }
 
 static struct axidma_chan *axidma_get_chan(struct axidma_device *dev,
-    int channel_id, enum axidma_type type, enum axidma_dir dir)
+        int channel_id)
 {
     int i;
     struct axidma_chan *chan;
@@ -129,8 +129,7 @@ static struct axidma_chan *axidma_get_chan(struct axidma_device *dev,
     for (i = 0; i < dev->num_chans; i++)
     {
         chan = &dev->channels[i];
-        if (chan->channel_id == channel_id && chan->type == type &&
-                chan->dir == dir) {
+        if (chan->channel_id == channel_id) {
             return chan;
         }
     }
@@ -160,13 +159,14 @@ static void axidma_dma_callback(void *data)
 // Setup the config structure for VDMA
 static void axidma_setup_vdma_config(struct xilinx_vdma_config *dma_config)
 {
+    memset(dma_config, 0, sizeof(dma_config));
     dma_config->frm_dly = 0;            // Number of frames to delay
-    dma_config->gen_lock = 0;           // No genlock, VDMA runs freely
+    dma_config->gen_lock = 0;           // Genlock, VDMA runs on fsyncs
     dma_config->master = 0;             // VDMA is the genlock master
-    dma_config->frm_cnt_en = 0;         // No interrupts based on frame count
+    dma_config->frm_cnt_en = 1;         // Interrupt based on frame count
     dma_config->park = 0;               // Continuously process all frames
     dma_config->park_frm = 0;           // Frame to stop (park) at (N/A)
-    dma_config->coalesc = 0;            // No transfer completion interrupts
+    dma_config->coalesc = 1;            // Interrupt after one frame completion
     dma_config->delay = 0;              // Disable the delay counter interrupt
     dma_config->reset = 0;              // Don't reset the channel
     dma_config->ext_fsync = 0;          // VDMA handles synchronizes itself
@@ -182,6 +182,7 @@ static int axidma_prep_transfer(struct axidma_chan *axidma_chan,
     struct completion *dma_comp;
     struct xilinx_vdma_config vdma_config;
     struct axidma_cb_data *cb_data;
+    struct dma_interleaved_template dma_template;
     enum dma_transfer_direction dma_dir;
     enum dma_ctrl_flags dma_flags;
     struct scatterlist *sg_list;
@@ -201,21 +202,32 @@ static int axidma_prep_transfer(struct axidma_chan *axidma_chan,
     type = axidma_type_to_string(dma_tfr->type);
     cb_data = dma_tfr->cb_data;
 
-    // If it's a VDMA transaction, configure it based on a default
-    if (dma_tfr->type == AXIDMA_VDMA) {
+    /* For VDMA transfers, we configure the channel, then prepare an interlaved
+     * transfer. For DMA, we simply prepare a slave scatter-gather transfer. */
+    dma_flags = DMA_CTRL_ACK | DMA_PREP_INTERRUPT;
+    if (dma_tfr->type == AXIDMA_DMA) {
+        dma_txnd = dmaengine_prep_slave_sg(chan, sg_list, sg_len, dma_dir,
+                                           dma_flags);
+    } else {
         axidma_setup_vdma_config(&vdma_config);
         rc = xilinx_vdma_channel_set_config(chan, &vdma_config);
         if (rc < 0) {
             axidma_err("Unable to set the config for channel.\n");
             goto stop_dma;
         }
-    }
 
-    /* Configure the engine to send an interrupt acknowledgement upon
-     * completion, and skip unmapping the buffer. */
-    dma_flags = DMA_CTRL_ACK | DMA_PREP_INTERRUPT;
-    dma_txnd = dmaengine_prep_slave_sg(chan, sg_list, sg_len, dma_dir,
-                                       dma_flags);
+        memset(&dma_template, 0, sizeof(dma_template));
+        dma_template.dst_start = sg_dma_address(&sg_list[0]);
+        dma_template.src_start = sg_dma_address(&sg_list[0]);
+        dma_template.dir = dma_dir;
+        dma_template.numf = dma_tfr->vdma_tfr.height;
+        dma_template.frame_size = 1;
+        dma_template.sgl[0].size = dma_tfr->vdma_tfr.width *
+                dma_tfr->vdma_tfr.depth;
+        dma_template.sgl[0].icg = 0;
+        dma_txnd = dmaengine_prep_interleaved_dma(chan, &dma_template,
+                dma_flags);
+    }
     if (dma_txnd == NULL) {
         axidma_err("Unable to prepare the dma engine for the %s %s buffer.\n",
                    type, direction);
@@ -343,34 +355,33 @@ int axidma_read_transfer(struct axidma_device *dev,
     int rc;
     struct axidma_chan *rx_chan;
     struct scatterlist sg_list;
+    struct axidma_transfer rx_tfr;
 
-    // Setup receive transfer structure for DMA
-    struct axidma_transfer rx_tfr = {
-        .sg_list = &sg_list,
-        .sg_len = 1,
-        .dir = AXIDMA_READ,
-        .type = AXIDMA_DMA,
-        .wait = trans->wait,
-        .channel_id = trans->channel_id,
-        .notify_signal = dev->notify_signal,
-        .process = get_current(),
-    };
+    // Get the channel with the given channel id
+    rx_chan = axidma_get_chan(dev, trans->channel_id);
+    if (rx_chan == NULL || rx_chan->dir != AXIDMA_READ) {
+        axidma_err("Invalid device id %d for DMA receive channel.\n",
+                   trans->channel_id);
+        return -ENODEV;
+    }
 
     // Setup the scatter-gather list for the transfer (only one entry)
-    sg_init_table(rx_tfr.sg_list, rx_tfr.sg_len);
-    rc = axidma_init_sg_entry(dev, rx_tfr.sg_list, 0, trans->buf,
+    sg_init_table(&sg_list, 1);
+    rc = axidma_init_sg_entry(dev, &sg_list, 0, trans->buf,
                               trans->buf_len);
     if (rc < 0) {
         return rc;
     }
 
-    // Get the channel with the given channel id
-    rx_chan = axidma_get_chan(dev, trans->channel_id, AXIDMA_DMA, AXIDMA_READ);
-    if (rx_chan == NULL) {
-        axidma_err("Invalid device id %d for DMA receive channel.\n",
-                   trans->channel_id);
-        return -ENODEV;
-    }
+    // Setup receive transfer structure for DMA
+    rx_tfr.sg_list = &sg_list;
+    rx_tfr.sg_len = 1;
+    rx_tfr.dir = rx_chan->dir;
+    rx_tfr.type = rx_chan->type;
+    rx_tfr.wait = trans->wait;
+    rx_tfr.channel_id = trans->channel_id;
+    rx_tfr.notify_signal = dev->notify_signal;
+    rx_tfr.process = get_current();
     rx_tfr.cb_data = &dev->cb_data[trans->channel_id];
 
     // Prepare the receive transfer
@@ -394,34 +405,33 @@ int axidma_write_transfer(struct axidma_device *dev,
     int rc;
     struct axidma_chan *tx_chan;
     struct scatterlist sg_list;
+    struct axidma_transfer tx_tfr;
 
-    // Setup transmit transfer structure for DMA
-    struct axidma_transfer tx_tfr = {
-        .sg_list = &sg_list,
-        .sg_len = 1,
-        .dir = AXIDMA_WRITE,
-        .type = AXIDMA_DMA,
-        .wait = trans->wait,
-        .channel_id = trans->channel_id,
-        .notify_signal = dev->notify_signal,
-        .process = get_current(),
-    };
+    // Get the channel with the given id
+    tx_chan = axidma_get_chan(dev, trans->channel_id);
+    if (tx_chan == NULL || tx_chan->dir != AXIDMA_WRITE) {
+        axidma_err("Invalid device id %d for DMA transmit channel.\n",
+                   trans->channel_id);
+        return -ENODEV;
+    }
 
     // Setup the scatter-gather list for the transfer (only one entry)
-    sg_init_table(tx_tfr.sg_list, tx_tfr.sg_len);
-    rc = axidma_init_sg_entry(dev, tx_tfr.sg_list, 0, trans->buf,
+    sg_init_table(&sg_list, 1);
+    rc = axidma_init_sg_entry(dev, &sg_list, 0, trans->buf,
                               trans->buf_len);
     if (rc < 0) {
         return rc;
     }
 
-    // Get the channel with the given id
-    tx_chan = axidma_get_chan(dev, trans->channel_id, AXIDMA_DMA, AXIDMA_WRITE);
-    if (tx_chan == NULL) {
-        axidma_err("Invalid device id %d for DMA transmit channel.\n",
-                   trans->channel_id);
-        return -ENODEV;
-    }
+    // Setup transmit transfer structure for DMA
+    tx_tfr.sg_list = &sg_list;
+    tx_tfr.sg_len = 1;
+    tx_tfr.dir = tx_chan->dir;
+    tx_tfr.type = tx_chan->type;
+    tx_tfr.wait = trans->wait;
+    tx_tfr.channel_id = trans->channel_id;
+    tx_tfr.notify_signal = dev->notify_signal;
+    tx_tfr.process = get_current();
     tx_tfr.cb_data = &dev->cb_data[trans->channel_id];
 
     // Prepare the transmit transfer
@@ -447,61 +457,64 @@ int axidma_rw_transfer(struct axidma_device *dev,
     int rc;
     struct axidma_chan *tx_chan, *rx_chan;
     struct scatterlist tx_sg_list, rx_sg_list;
+    struct axidma_transfer tx_tfr, rx_tfr;
 
-    // Setup receive and trasmit transfer structures for DMA
-    struct axidma_transfer tx_tfr = {
-        .sg_list = &tx_sg_list,
-        .sg_len = 1,
-        .dir = AXIDMA_WRITE,
-        .type = AXIDMA_DMA,
-        .wait = false,
-        .channel_id = trans->tx_channel_id,
-        .notify_signal = dev->notify_signal,
-        .process = get_current(),
-    };
-    struct axidma_transfer rx_tfr = {
-        .sg_list = &rx_sg_list,
-        .sg_len = 1,
-        .dir = AXIDMA_READ,
-        .type = AXIDMA_DMA,
-        .wait = trans->wait,
-        .channel_id = trans->rx_channel_id,
-        .notify_signal = dev->notify_signal,
-        .process = get_current(),
-    };
+    // Get the transmit and receive channels with the given ids.
+    tx_chan = axidma_get_chan(dev, trans->tx_channel_id);
+    if (tx_chan == NULL || tx_chan->dir != AXIDMA_WRITE) {
+        axidma_err("Invalid device id %d for DMA transmit channel.\n",
+                   trans->tx_channel_id);
+        return -ENODEV;
+    }
+
+    rx_chan = axidma_get_chan(dev, trans->rx_channel_id);
+    if (rx_chan == NULL || rx_chan->dir != AXIDMA_READ) {
+        axidma_err("Invalid device id %d for DMA receive channel.\n",
+                   trans->rx_channel_id);
+        return -ENODEV;
+    }
 
     // Setup the scatter-gather list for the transfers (only one entry)
-    sg_init_table(tx_tfr.sg_list, tx_tfr.sg_len);
-    rc = axidma_init_sg_entry(dev, tx_tfr.sg_list, 0, trans->tx_buf,
+    sg_init_table(&tx_sg_list, 1);
+    rc = axidma_init_sg_entry(dev, &tx_sg_list, 0, trans->tx_buf,
                               trans->tx_buf_len);
     if (rc < 0) {
         return rc;
     }
-    sg_init_table(rx_tfr.sg_list, rx_tfr.sg_len);
-    rc = axidma_init_sg_entry(dev, rx_tfr.sg_list, 0, trans->rx_buf,
+    sg_init_table(&rx_sg_list, 1);
+    rc = axidma_init_sg_entry(dev, &rx_sg_list, 0, trans->rx_buf,
                               trans->rx_buf_len);
     if (rc < 0) {
         return rc;
     }
 
-    // Get the transmit and receive channels with the given ids.
-    tx_chan = axidma_get_chan(dev, trans->tx_channel_id, AXIDMA_DMA,
-                              AXIDMA_WRITE);
-    if (tx_chan == NULL) {
-        axidma_err("Invalid device id %d for DMA transmit channel.\n",
-                   trans->tx_channel_id);
-        return -ENODEV;
-    }
+    // Setup receive and trasmit transfer structures for DMA
+    tx_tfr.sg_list = &tx_sg_list,
+    tx_tfr.sg_len = 1,
+    tx_tfr.dir = tx_chan->dir,
+    tx_tfr.type = tx_chan->type,
+    tx_tfr.wait = false,
+    tx_tfr.channel_id = trans->tx_channel_id,
+    tx_tfr.notify_signal = dev->notify_signal,
+    tx_tfr.process = get_current(),
     tx_tfr.cb_data = &dev->cb_data[trans->tx_channel_id];
+    // FIXME: FIXME: FIXME: Temporary
+    tx_tfr.vdma_tfr.height = 1080;
+    tx_tfr.vdma_tfr.width = 1920;
+    tx_tfr.vdma_tfr.depth = 4;
 
-    rx_chan = axidma_get_chan(dev, trans->rx_channel_id, AXIDMA_DMA,
-                              AXIDMA_READ);
-    if (rx_chan == NULL) {
-        axidma_err("Invalid device id %d for DMA receive channel.\n",
-                   trans->rx_channel_id);
-        return -ENODEV;
-    }
+    rx_tfr.sg_list = &rx_sg_list,
+    rx_tfr.sg_len = 1,
+    rx_tfr.dir = rx_chan->dir,
+    rx_tfr.type = rx_chan->type,
+    rx_tfr.wait = trans->wait,
+    rx_tfr.channel_id = trans->rx_channel_id,
+    rx_tfr.notify_signal = dev->notify_signal,
+    rx_tfr.process = get_current(),
     rx_tfr.cb_data = &dev->cb_data[trans->rx_channel_id];
+    rx_tfr.vdma_tfr.height = 1080;
+    rx_tfr.vdma_tfr.width = 1920;
+    rx_tfr.vdma_tfr.depth = 4;
 
     // Prep both the receive and transmit transfers
     rc = axidma_prep_transfer(tx_chan, &tx_tfr);
@@ -568,10 +581,10 @@ int axidma_video_write_transfer(struct axidma_device *dev,
     }
 
     // Get the channel with the given id
-    tx_chan = axidma_get_chan(dev, trans->channel_id, AXIDMA_DMA,
-                              AXIDMA_WRITE);
-    if (tx_chan == NULL) {
-        axidma_err("Invalid device id %d for DMA transmit channel.\n",
+    tx_chan = axidma_get_chan(dev, trans->channel_id);
+    if (tx_chan == NULL && tx_chan->dir != AXIDMA_WRITE &&
+            tx_chan->type != AXIDMA_VDMA) {
+        axidma_err("Invalid device id %d for VDMA transmit channel.\n",
                    trans->channel_id);
         rc = -ENODEV;
         goto free_sg_list;
@@ -599,9 +612,9 @@ int axidma_stop_channel(struct axidma_device *dev,
     struct axidma_chan *chan;
 
     // Get the transmit and receive channels with the given ids.
-    chan = axidma_get_chan(dev, chan_info->channel_id, chan_info->type,
-                           chan_info->dir);
-    if (chan == NULL) {
+    chan = axidma_get_chan(dev, chan_info->channel_id);
+    if (chan == NULL && chan->type != chan_info->type &&
+            chan->dir != chan_info->dir) {
         axidma_err("Invalid channel id %d for %s %s channel.\n",
             chan_info->channel_id, axidma_type_to_string(chan_info->type),
             axidma_dir_to_string(chan_info->dir));
