@@ -8,7 +8,7 @@ A zero-copy, high-bandwidth Linux driver and userspace interface library for Xil
 
 The driver enables userspace application to allocate zero-copy, physically contiguous DMA buffers for transfers, allowing for high bandwidth communication between the FPGA and ARM core. The driver exposes its functionality via a character device, which the library interacts with.
 
-This driver supports both 3.x and 4.x version Xilinx kernels. It has been tested with the mainline Xilinx kernel, Xillinux, and the Analog Devices' kernel on the Zedboard. The driver should work with any 3.x or 4.x kernel, and should work with any board that uses a Zynq-7000 series processing system.
+This driver supports 4.x version Xilinx kernels. It has been tested with the mainline Xilinx kernel, and the Analog Devices' kernel on the Zedboard. The driver should work with any 4.x kernel and any board that uses a Zynq-7000 series processing system.
 
 ## Features
 
