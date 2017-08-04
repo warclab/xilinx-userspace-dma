@@ -642,7 +642,7 @@ static int axidma_request_channels(struct platform_device *pdev,
     {
         chan = &dev->channels[i];
         chan->chan = dma_request_slave_channel(&pdev->dev, chan->name);
-        if (chan == NULL) {
+        if (chan->chan == NULL) {
             axidma_err("Unable to get slave channel %d: %s.\n", i, chan->name);
             rc = -ENODEV;
             goto release_channels;
