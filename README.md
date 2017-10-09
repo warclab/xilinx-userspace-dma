@@ -176,6 +176,10 @@ In file included from /home/bmperez/projects/xilinx_axidma/driver/axidma_dma.c:2
 compilation terminated.
 ```
 
+## Using the Driver with a PetaLinux Kernel
+
+For how to add the driver to a PetaLinux project and build it against a PetaLinux kernel, see [issue #24](https://github.com/bperez77/xilinx_axidma/issues/24).
+
 ## Limitations/To-Do's
 
 1. There is currently no explicit support for concurrency, so only one thread should access the driver at a time.
