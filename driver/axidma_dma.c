@@ -159,7 +159,7 @@ static void axidma_dma_callback(void *data)
 // Setup the config structure for VDMA
 static void axidma_setup_vdma_config(struct xilinx_vdma_config *dma_config)
 {
-    memset(dma_config, 0, sizeof(dma_config));
+    memset(dma_config, 0, sizeof(*dma_config));
     dma_config->frm_dly = 0;            // Number of frames to delay
     dma_config->gen_lock = 0;           // Genlock, VDMA runs on fsyncs
     dma_config->master = 0;             // VDMA is the genlock master
