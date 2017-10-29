@@ -26,18 +26,9 @@ install:
     - git clone --depth 1 https://github.com/Xilinx/linux-xlnx xilinx_linux
     - cd xilinx_linux
     - make xilinx_zynq_defconfig
-    - make -j 128 UIMAGE_LOADADDR=0x8000 uImage
-    - cd ../
-
-    - git clone --depth 1 https://github.com/enclustra-bsp/xilinx-linux
-            -b v1.4 enclustra_linux
-    - cd enclustra_linux
-    - make xilinx_zynq_defconfig
-    - make -j 128 UIMAGE_LOADADDR=0x8000 uImage
-    - cd ../
+    - make -j 8 UIMAGE_LOADADDR=0x8000 uImage
 
 # Build the driver against the kernels to verify that it compiles properly
 script:
     - make KBUILD_DIR=xilinx_linux
     - make KBUILD_DIR=xilinx_linux clean
-    - make KBUILD_DIR=enclustra_linux XILINX_DMA_INCLUDE_PATH_FIXUP=yes
