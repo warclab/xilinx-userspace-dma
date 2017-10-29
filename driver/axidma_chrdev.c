@@ -21,6 +21,7 @@
 #include <asm/uaccess.h>        // Userspace memory access functions
 #include <linux/slab.h>         // Kernel allocation functions
 #include <linux/errno.h>        // Linux error codes
+#include <linux/of_device.h>    // Device tree device related functions
 
 #include <linux/dma-buf.h>      // DMA shared buffers interface
 #include <linux/scatterlist.h>  // Scatter-gather table definitions
@@ -201,11 +202,13 @@ static int axidma_put_external(struct axidma_device *dev, void *user_addr)
 
 static void axidma_vma_close(struct vm_area_struct *vma)
 {
+    struct axidma_device *dev;
     struct axidma_dma_allocation *dma_alloc;
 
     // Get the AXI DMA allocation data and free the DMA buffer
+    dev = axidma_dev;
     dma_alloc = vma->vm_private_data;
-    dma_free_coherent(NULL, dma_alloc->size, dma_alloc->kern_addr,
+    dma_free_coherent(dev->device, dma_alloc->size, dma_alloc->kern_addr,
                       dma_alloc->dma_addr);
 
     // Remove the allocation from the list, and free the structure
@@ -267,9 +270,12 @@ static int axidma_mmap(struct file *file, struct vm_area_struct *vma)
     dma_alloc->size = vma->vm_end - vma->vm_start;
     dma_alloc->user_addr = (void *)vma->vm_start;
 
+    // Configure the DMA device
+    of_dma_configure(dev->device, NULL);
+
     // Allocate the requested region a contiguous and uncached for DMA
     vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
-    dma_alloc->kern_addr = dma_alloc_coherent(NULL, dma_alloc->size,
+    dma_alloc->kern_addr = dma_alloc_coherent(dev->device, dma_alloc->size,
                                               &dma_alloc->dma_addr, GFP_KERNEL);
     if (dma_alloc->kern_addr == NULL) {
         axidma_err("Unable to allocate contiguous DMA memory region of size "
@@ -281,8 +287,8 @@ static int axidma_mmap(struct file *file, struct vm_area_struct *vma)
     }
 
     // Map the region into userspace
-    rc = dma_mmap_coherent(NULL, vma, dma_alloc->kern_addr, dma_alloc->dma_addr,
-                           dma_alloc->size);
+    rc = dma_mmap_coherent(dev->device, vma, dma_alloc->kern_addr,
+                           dma_alloc->dma_addr, dma_alloc->size);
     if (rc < 0) {
         axidma_err("Unable to remap address %p to userspace address %p, size "
                    "%zu.\n", dma_alloc->kern_addr, dma_alloc->user_addr,
@@ -300,7 +306,7 @@ static int axidma_mmap(struct file *file, struct vm_area_struct *vma)
     return 0;
 
 free_dma_region:
-    dma_free_coherent(NULL, dma_alloc->size, dma_alloc->kern_addr,
+    dma_free_coherent(dev->device, dma_alloc->size, dma_alloc->kern_addr,
                       dma_alloc->dma_addr);
 free_vma_data:
     kfree(dma_alloc);
