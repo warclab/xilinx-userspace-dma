@@ -242,16 +242,19 @@ int axidma_twoway_transfer(axidma_dev_t dev, int tx_channel, void *tx_buf,
         size_t tx_len, int rx_channel, void *rx_buf, size_t rx_len, bool wait);
 
 /**
- * Starts a video DMA (VDMA) transfer on the given DMA channel.
+ * Starts a video DMA (VDMA) loop/continuous transfer on the given channel.
  *
- * A video DMA transfer differs from a typical DMA transfer in that it is
- * cyclic, and ends only when requested by the user. A VDMA transfer will
- * continuously transmit the frame buffers, transmitting the first buffer,
- * then the second, etc., and then repeating once the last buffer is reached.
+ * A video loop transfer differs from a typical DMA transfer in that it is
+ * cyclic, and ends only when requested by the user. A video loop transfer will
+ * continuously transmit/receive the frame buffers, transmitting the first
+ * buffer, then the second, etc., and then repeating from the beginning once the
+ * last buffer is reached. This is suitable when continuously sending data to a
+ * display, or continuous receiving data from a camera.
  *
  * This function supports an arbitrary number of frame buffers, allowing
- * for both double-buffering and triple-buffering. This will only transmit
- * the buffers, the receive direction is not supported.
+ * for both double-buffering and triple-buffering. This function is
+ * non-blocking, and returns immediately. The only way to stop the transfer is
+ * via a call to #axidma_stop_transfer.
  *
  * @param[in] dev An #axidma_dev_t returned by #axidma_init.
  * @param[in] display_channel DMA channel the video transfer will take place

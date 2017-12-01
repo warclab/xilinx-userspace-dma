@@ -445,11 +445,11 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             rc = axidma_rw_transfer(dev, &inout_trans);
             break;
 
-        case AXIDMA_DMA_VIDEO_WRITE:
+        case AXIDMA_DMA_VIDEO_READ:
             if (copy_from_user(&video_trans, arg_ptr,
                                sizeof(video_trans)) != 0) {
                 axidma_err("Unable to copy transfer info from userspace for "
-                           "AXIDMA_VIDEO_WRITE.\n");
+                           "AXIDMA_DMA_VIDEO_READ.\n");
                 return -EFAULT;
             }
 
@@ -462,7 +462,28 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
                 return -EFAULT;
             }
 
-            rc = axidma_video_write_transfer(dev, &video_trans);
+            rc = axidma_video_transfer(dev, &video_trans, AXIDMA_READ);
+            break;
+
+        case AXIDMA_DMA_VIDEO_WRITE:
+            if (copy_from_user(&video_trans, arg_ptr,
+                               sizeof(video_trans)) != 0) {
+                axidma_err("Unable to copy transfer info from userspace for "
+                           "AXIDMA_VIDEO_WRITE.\n");
+                return -EFAULT;
+            }
+
+            // Verify that we can access the array of frame buffers
+            // TODO: This array should be copied into kernel space
+            size = video_trans.num_frame_buffers *
+                   sizeof(video_trans.frame_buffers[0]);
+            if (!axidma_access_ok(video_trans.frame_buffers, size, true)) {
+                axidma_err("Unable to copy frame buffer addresses from "
+                           "userspace for AXIDMA_DMA_VIDEO_WRITE.\n");
+                return -EFAULT;
+            }
+
+            rc = axidma_video_transfer(dev, &video_trans, AXIDMA_WRITE);
             break;
 
         case AXIDMA_STOP_DMA_CHANNEL:

@@ -499,29 +499,33 @@ int axidma_twoway_transfer(axidma_dev_t dev, int tx_channel, void *tx_buf,
     return rc;
 }
 
-/* This function performs a video transfer over AXI DMA, setting up the DMA to
- * read from the given frame buffers on-demand continuously. This call is
- * always non-blocking. The transfer must be stopped with a call to
- * axidma_stop_transfer. */
+/* This function performs a video transfer over AXI DMA, setting up a VDMA
+ * channel to either read from or write to given frame buffers on-demand
+ * continuously. This call is always non-blocking. The transfer can only be
+ * stopped with a call to axidma_stop_transfer. */
 int axidma_video_transfer(axidma_dev_t dev, int display_channel, size_t width,
         size_t height, size_t depth, void **frame_buffers, int num_buffers)
 {
     int rc;
+    unsigned long axidma_cmd;
     struct axidma_video_transaction trans;
+    dma_channel_t *dma_chan;
 
     assert(find_channel(dev, display_channel) != NULL);
-    assert(find_channel(dev, display_channel)->dir == AXIDMA_WRITE);
+    assert(find_channel(dev, display_channel)->type == AXIDMA_VDMA);
 
     // Setup the argument structure for the IOCTL
+    dma_chan = find_channel(dev, display_channel);
     trans.channel_id = display_channel;
     trans.num_frame_buffers = num_buffers;
     trans.frame_buffers = frame_buffers;
     trans.width = width;
     trans.height = height;
     trans.depth = depth;
-
+    axidma_cmd = (dma_chan->dir == AXIDMA_READ) ? AXIDMA_DMA_VIDEO_READ :
+                                                  AXIDMA_DMA_VIDEO_WRITE;
     // Perform the video transfer
-    rc = ioctl(dev->fd, AXIDMA_DMA_VIDEO_WRITE, &trans);
+    rc = ioctl(dev->fd, axidma_cmd, &trans);
     if (rc < 0) {
         perror("Failed to perform the AXI DMA video write transfer");
     }

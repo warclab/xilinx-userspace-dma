@@ -275,6 +275,34 @@ struct axidma_video_transaction {
                                              struct axidma_inout_transaction)
 
 /**
+ * Performs frame-buffer based transfers from a camera on the fabric.
+ *
+ * This function performs a video transfer from the logic fabric. It receives
+ * the given buffers from logic fabric (intended for a camera pipeline). When it
+ * reaches the end of the buffers, it loops back and receives the data again in
+ * the first buffer. This is used for frame-buffer based cameras.
+ *
+ * All of the frame buffers must be within an address range that was allocated
+ * by a call to mmap with the AXI DMA device. Also, each buffer must
+ * be able to hold a frame of (width * height * depth) bytes. The input array of
+ * buffers must be a memory location that holds `num_frame_buffers` addresses.
+ *
+ * This call is always non-blocking as the VDMA engine will run forever. In
+ * order to end the transaction, you must make a call to the stop dma channel
+ * ioctl.
+ *
+ * Inputs:
+ *  - channel_id - The id for the channel you want to send data over.
+ *  - num_frame_buffers - The number of frame buffers you're using.
+ *  - frame_buffers - An array of the frame buffer addresses.
+ *  - width - The width of the frame (image) in pixels.
+ *  - height - The height of the frame in lines.
+ *  - depth - The size of each pixel in the frame in bytes.
+ **/
+#define AXIDMA_DMA_VIDEO_READ           _IOR(AXIDMA_IOCTL_MAGIC, 7, \
+                                             struct axidma_video_transaction)
+
+/**
  * Performs frame-buffer based transfers to a display on the logic fabric.
  *
  * This function performs a video transfer to the logic fabric. It sends
@@ -299,7 +327,7 @@ struct axidma_video_transaction {
  *  - height - The height of the frame in lines.
  *  - depth - The size of each pixel in the frame in bytes.
  **/
-#define AXIDMA_DMA_VIDEO_WRITE          _IOR(AXIDMA_IOCTL_MAGIC, 7, \
+#define AXIDMA_DMA_VIDEO_WRITE          _IOR(AXIDMA_IOCTL_MAGIC, 8, \
                                              struct axidma_video_transaction)
 
 /**
@@ -315,7 +343,7 @@ struct axidma_video_transaction {
  *  - channel_id - The integer id for the channel.
  *  - chan - This field is unused an can be safely left uninitialized.
  */
-#define AXIDMA_STOP_DMA_CHANNEL         _IOR(AXIDMA_IOCTL_MAGIC, 8, \
+#define AXIDMA_STOP_DMA_CHANNEL         _IOR(AXIDMA_IOCTL_MAGIC, 9, \
                                              struct axidma_chan)
 
 /**
@@ -330,6 +358,6 @@ struct axidma_video_transaction {
  * Inputs:
  *  - user_addr - The user virtual address of the external DMA buffer.
  **/
-#define AXIDMA_UNREGISTER_BUFFER        _IO(AXIDMA_IOCTL_MAGIC, 9)
+#define AXIDMA_UNREGISTER_BUFFER        _IO(AXIDMA_IOCTL_MAGIC, 10)
 
 #endif /* AXIDMA_IOCTL_H_ */
