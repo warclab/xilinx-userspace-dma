@@ -10,6 +10,12 @@ The driver enables userspace application to allocate zero-copy, physically conti
 
 This driver supports 4.x version Xilinx kernels. It has been tested with the mainline Xilinx kernel, and the Analog Devices' kernel on the Zedboard. The driver should work with any 4.x kernel and any board that uses a Zynq-7000 series processing system.
 
+## Fork with Multi-Process Support
+
+At the moment, the driver only supports a single process accessing the AXI DMA/VDMA IP engines. There is a fork of the repository that has support for multiple processes accessing independent DMA engines by [@corna](https://github.com/corna). You can find that fork [here](https://github.com/corna/xilinx_axidma). Independent DMA engines can be opened by a single process; however, each engine still can only be used by one process at a time. Thus, two processes can not share the TX and RX channels of an engine.
+
+In the future, the driver will have proper synchronization for both multiple processes and multiple threads. In the meantime, if you need multi-process support, the fork is a good workaround.
+
 ## Features
 
 1. Zero-copy transmit (processor to FPGA), receive (FPGA to processor), and two-way combined DMA transfers.
