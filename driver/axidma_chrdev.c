@@ -343,7 +343,7 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
     struct axidma_register_buffer ext_buf;
     struct axidma_transaction trans;
     struct axidma_inout_transaction inout_trans;
-    struct axidma_video_transaction video_trans;
+    struct axidma_video_transaction video_trans, *__user user_video_trans;
     struct axidma_chan chan_info;
 
     // Coerce the arguement as a userspace pointer
@@ -453,16 +453,27 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
                 return -EFAULT;
             }
 
-            // Verify that we can access the array of frame buffers
+            // Allocate a kernel-space array for the frame buffers
             size = video_trans.num_frame_buffers *
                    sizeof(video_trans.frame_buffers[0]);
-            if (!axidma_access_ok(video_trans.frame_buffers, size, true)) {
-                axidma_err("Unable to copy frame buffer addresses from "
-                           "userspace for AXIDMA_DMA_VIDEO_WRITE.\n");
+            video_trans.frame_buffers = kmalloc(size, GFP_KERNEL);
+            if (video_trans.frame_buffers == NULL) {
+                axidma_err("Unable to allocate array for the frame buffers.\n");
+                return -ENOMEM;
+            }
+
+            // Copy the frame buffer array from user space to kernel space
+            user_video_trans = (struct axidma_video_transaction *__user)arg_ptr;
+            if (!copy_from_user(video_trans.frame_buffers,
+                        user_video_trans->frame_buffers, size) != 0) {
+                axidma_err("Unable to copy the frame buffer array from "
+                        "userspace for AXIDMA_VIDEO_READ.\n");
+                kfree(video_trans.frame_buffers);
                 return -EFAULT;
             }
 
             rc = axidma_video_transfer(dev, &video_trans, AXIDMA_READ);
+            kfree(video_trans.frame_buffers);
             break;
 
         case AXIDMA_DMA_VIDEO_WRITE:
@@ -473,17 +484,27 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
                 return -EFAULT;
             }
 
-            // Verify that we can access the array of frame buffers
-            // TODO: This array should be copied into kernel space
+            // Allocate a kernel-space array for the frame buffers
             size = video_trans.num_frame_buffers *
                    sizeof(video_trans.frame_buffers[0]);
-            if (!axidma_access_ok(video_trans.frame_buffers, size, true)) {
-                axidma_err("Unable to copy frame buffer addresses from "
-                           "userspace for AXIDMA_DMA_VIDEO_WRITE.\n");
+            video_trans.frame_buffers = kmalloc(size, GFP_KERNEL);
+            if (video_trans.frame_buffers == NULL) {
+                axidma_err("Unable to allocate array for the frame buffers.\n");
+                return -ENOMEM;
+            }
+
+            // Copy the frame buffer array from user space to kernel space
+            user_video_trans = (struct axidma_video_transaction *__user)arg_ptr;
+            if (!copy_from_user(video_trans.frame_buffers,
+                        user_video_trans->frame_buffers, size) != 0) {
+                axidma_err("Unable to copy the frame buffer array from "
+                        "userspace for AXIDMA_VIDEO_READ.\n");
+                kfree(video_trans.frame_buffers);
                 return -EFAULT;
             }
 
             rc = axidma_video_transfer(dev, &video_trans, AXIDMA_WRITE);
+            kfree(video_trans.frame_buffers);
             break;
 
         case AXIDMA_STOP_DMA_CHANNEL:
