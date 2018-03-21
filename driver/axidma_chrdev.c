@@ -18,7 +18,7 @@
 #include <linux/ioctl.h>        // IOCTL macros and definitions
 #include <linux/fs.h>           // File operations and file types
 #include <linux/mm.h>           // Memory types and remapping functions
-#include <asm/uaccess.h>        // Userspace memory access functions
+#include <linux/uaccess.h>      // Userspace memory access functions
 #include <linux/slab.h>         // Kernel allocation functions
 #include <linux/errno.h>        // Linux error codes
 #include <linux/of_device.h>    // Device tree device related functions
