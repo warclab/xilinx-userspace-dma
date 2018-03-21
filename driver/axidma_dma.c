@@ -28,7 +28,6 @@
 #include <linux/amba/xilinx_dma.h>  // Xilinx DMA config structures
 #endif
 
-
 // Local dependencies
 #include "axidma.h"                 // Internal definitions
 #include "axidma_ioctl.h"           // IOCTL interface definition and types
@@ -583,7 +582,7 @@ int axidma_video_transfer(struct axidma_device *dev,
 
     // Get the channel with the given id
     chan = axidma_get_chan(dev, trans->channel_id);
-    if (chan == NULL && chan->dir != dir && 
+    if (chan == NULL && chan->dir != dir &&
             chan->type != AXIDMA_VDMA) {
         axidma_err("Invalid device id %d for VDMA %s channel.\n",
                    trans->channel_id, axidma_dir_to_string(chan->dir));
