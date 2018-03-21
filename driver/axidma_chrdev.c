@@ -385,7 +385,7 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             break;
 
         case AXIDMA_GET_DMA_CHANNELS:
-            if (copy_from_user(&usr_chans, arg_ptr, sizeof(chan_info)) != 0) {
+            if (copy_from_user(&usr_chans, arg_ptr, sizeof(usr_chans)) != 0) {
                 axidma_err("Unable to copy channel buffer address from "
                            "userspace for AXIDMA_GET_DMA_CHANNELS.\n");
                 return -EFAULT;
