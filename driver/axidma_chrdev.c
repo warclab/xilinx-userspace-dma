@@ -75,6 +75,7 @@ dma_addr_t axidma_uservirt_to_dma(struct axidma_device *dev, void *user_addr,
                                   size_t size)
 {
     bool valid;
+    dma_addr_t offset;
     struct list_head *iter;
     struct axidma_dma_allocation *dma_alloc;
     struct axidma_external_allocation *dma_ext_alloc;
@@ -86,6 +87,7 @@ dma_addr_t axidma_uservirt_to_dma(struct axidma_device *dev, void *user_addr,
         valid = valid_dma_request(dma_alloc->user_addr, dma_alloc->size,
                                   user_addr, size);
         if (valid) {
+            offset = (dma_addr_t)(user_addr - dma_alloc->user_addr);
             return dma_alloc->dma_addr;
         }
     }
@@ -98,7 +100,8 @@ dma_addr_t axidma_uservirt_to_dma(struct axidma_device *dev, void *user_addr,
         valid = valid_dma_request(dma_ext_alloc->user_addr, dma_ext_alloc->size,
                                   user_addr, size);
         if (valid) {
-            return sg_dma_address(&dma_ext_alloc->sg_table->sgl[0]);
+            offset = (dma_addr_t)(user_addr - dma_ext_alloc->user_addr);
+            return sg_dma_address(&dma_ext_alloc->sg_table->sgl[0]) + offset;
         }
     }
 
