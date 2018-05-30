@@ -99,6 +99,12 @@ static int axidma_of_parse_channel(struct device_node *dma_node, int channel,
         dma_chan_node = of_get_next_child(dma_node, dma_chan_node);
     }
 
+    // Check if the specified node exists
+    if (dma_chan_node == NULL) {
+        axidma_node_err(dma_chan_node, "Unable to find child node number %d.\n",
+                channel);
+    }
+
     // Read out the channel's unique device id, and put it in the structure
     if (of_find_property(dma_chan_node, "xlnx,device-id", NULL) == NULL) {
         axidma_node_err(dma_chan_node, "DMA channel is missing the "
