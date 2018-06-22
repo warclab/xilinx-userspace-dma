@@ -130,5 +130,6 @@ MODULE_AUTHOR("Brandon Perez");
 MODULE_AUTHOR("Jared Choi");
 
 MODULE_LICENSE("GPL");
+MODULE_VERSION("1.0");
 MODULE_DESCRIPTION("Module to provide a userspace interface for transferring "
                    "data from the processor to the logic fabric via AXI DMA.");
