@@ -55,6 +55,18 @@ enum axidma_type {
     AXIDMA_VDMA                     ///< Specialized AXI video DMA enginge
 };
 
+/**
+ * Structure representing all of the data about a video frame.
+ *
+ * This has all the information needed to properly setup an AXI VDMA
+ * transaction, which is simply the video dimensions.
+ **/
+struct axidma_video_frame {
+    int height;                     ///< Height of the image in terms of pixels.
+    int width;                      ///< Width of the image in terms of pixels.
+    int depth;                      ///< Depth of the image in terms of pixels.
+};
+
 // TODO: Channel really should not be here
 struct axidma_chan {
     enum axidma_dir dir;            // The DMA direction of the channel
@@ -77,7 +89,7 @@ struct axidma_channel_info {
 };
 
 struct axidma_register_buffer {
-    int fd;                         // Anonymous file descritpor for DMA buffer
+    int fd;                         // Anonymous file descriptor for DMA buffer
     size_t size;                    // The size of the external DMA buffer
     void *user_addr;                // User virtual address of the buffer
 };
@@ -87,6 +99,11 @@ struct axidma_transaction {
     int channel_id;                 // The id of the DMA channel to use
     void *buf;                      // The buffer used for the transaction
     size_t buf_len;                 // The length of the buffer
+
+    // Kept as a union for extend ability.
+    union {
+        struct axidma_video_frame frame;    // Frame information for VDMA.
+    };
 };
 
 struct axidma_inout_transaction {
@@ -94,18 +111,18 @@ struct axidma_inout_transaction {
     int tx_channel_id;              // The id of the transmit DMA channel
     void *tx_buf;                   // The buffer containing the data to send
     size_t tx_buf_len;              // The length of the transmit buffer
+    struct axidma_video_frame tx_frame; // Frame information for transmit.
     int rx_channel_id;              // The id of the receive DMA channel
     void *rx_buf;                   // The buffer to place the data in
     size_t rx_buf_len;              // The length of the receive buffer
+    struct axidma_video_frame rx_frame; // Frame information for receive.
 };
 
 struct axidma_video_transaction {
-    int channel_id;             // The id of the DMA channel to transmit video
-    int num_frame_buffers;      // The number of frame buffers to use.
-    void **frame_buffers;       // The frame buffer addresses to use for video
-    size_t width;               // The width of the image in pixels
-    size_t height;              // The height of the image in lines
-    size_t depth;               // The size of each pixel in bytes
+    int channel_id;                 // The id of the DMA channel to transmit video
+    int num_frame_buffers;          // The number of frame buffers to use.
+    void **frame_buffers;           // The frame buffer addresses to use for video
+    struct axidma_video_frame frame;        // Information about the frame
 };
 
 /*----------------------------------------------------------------------------

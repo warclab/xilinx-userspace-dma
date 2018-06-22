@@ -325,9 +325,9 @@ int main(int argc, char **argv)
     trans.channel_id = tx_channel;
     trans.num_frame_buffers = 1;
     trans.frame_buffers = (void **)&image_buf;
-    trans.width = image_width;
-    trans.height = image_height;
-    trans.depth = sizeof(int);
+    trans.frame.width = image_width;
+    trans.frame.height = image_height;
+    trans.frame.depth = sizeof(int);
     if (ioctl(axidma_fd, AXIDMA_DMA_VIDEO_WRITE, &trans) < 0) {
         perror("Failed to perform a DMA video write transaction");
         rc = -1;

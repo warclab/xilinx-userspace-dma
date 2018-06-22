@@ -34,7 +34,7 @@
 #include <errno.h>              // Error codes
 
 #include "util.h"               // Miscellaneous utilities
-#include "conversion.h"         // Convert bytes to MBs
+#include "conversion.h"         // Convert bytes to MiBs
 #include "libaxidma.h"          // Interface ot the AXI DMA library
 
 /*----------------------------------------------------------------------------
@@ -84,7 +84,7 @@ static void print_usage(bool help)
             "of bytes received back. By default, this is the same as the size "
             "of the input file.\n");
     fprintf(stream, "\t-o <Output file size>:\tThe size of the output file in "
-            "Mbs. This is a floating-point value that must be at least the "
+            "Mibs. This is a floating-point value that must be at least the "
             "number of bytes received back. By default, this is the same "
             "the size of the input file.\n");
     return;
@@ -144,14 +144,14 @@ static int parse_args(int argc, char **argv, char **input_path,
                 s_specified = true;
                 break;
 
-            // Parse the output file size (in MBs)
+            // Parse the output file size (in MiBs)
             case 'o':
                 rc = parse_double(option, optarg, &double_arg);
                 if (rc < 0) {
                     print_usage(false);
                     return rc;
                 }
-                *output_size = MB_TO_BYTE(double_arg);
+                *output_size = MIB_TO_BYTE(double_arg);
                 o_specified = true;
                 break;
 
@@ -233,8 +233,8 @@ static int transfer_file(axidma_dev_t dev, struct dma_transfer *trans,
     // Perform the transfer
     // Perform the main transaction
     rc = axidma_twoway_transfer(dev, trans->input_channel, trans->input_buf,
-            trans->input_size, trans->output_channel, trans->output_buf,
-            trans->output_size, true);
+            trans->input_size, NULL, trans->output_channel, trans->output_buf,
+            trans->output_size, NULL, true);
     if (rc < 0) {
         fprintf(stderr, "DMA read write transaction failed.\n");
         goto free_output_buf;
@@ -332,8 +332,8 @@ int main(int argc, char **argv)
     printf("AXI DMA File Transfer Info:\n");
     printf("\tTransmit Channel: %d\n", trans.input_channel);
     printf("\tReceive Channel: %d\n", trans.output_channel);
-    printf("\tInput File Size: %.2f Mb\n", BYTE_TO_MB(trans.input_size));
-    printf("\tOutput File Size: %.2f Mb\n\n", BYTE_TO_MB(trans.output_size));
+    printf("\tInput File Size: %.2f MiB\n", BYTE_TO_MIB(trans.input_size));
+    printf("\tOutput File Size: %.2f MiB\n\n", BYTE_TO_MIB(trans.output_size));
 
     // Transfer the file over the AXI DMA
     rc = transfer_file(axidma_dev, &trans, output_path);

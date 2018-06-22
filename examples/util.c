@@ -60,6 +60,24 @@ int parse_double(char option, char *arg_str, double *data)
     return 0;
 }
 
+int parse_resolution(char option, char *arg_str, int *height, int *width,
+        int *depth)
+{
+    int rc;
+
+    rc = sscanf(optarg, "%dx%dx%d\n", height, width, depth);
+    if (rc < 0) {
+        perror("Unable to parse argument");
+        return rc;
+    } else if (rc != 3) {
+        fprintf(stderr, "Error: Unable to parse argument '-%c %s' as a height "
+                " x width x depth resolution.\n", option, arg_str);
+        return -EINVAL;
+    }
+
+    return 0;
+}
+
 /*----------------------------------------------------------------------------
  * File Operation Utilities
  *----------------------------------------------------------------------------*/

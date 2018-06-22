@@ -63,11 +63,7 @@ struct axidma_transfer {
 
     // VDMA specific fields (kept as union for extensability)
     union {
-        struct {
-            int width;              // Width of the image in pixels
-            int height;             // Height of the image in lines
-            int depth;              // Size of each pixel in bytes
-        } vdma_tfr;
+        struct axidma_video_frame frame;    // Frame information for VDMA
     };
 };
 
@@ -227,10 +223,10 @@ static int axidma_prep_transfer(struct axidma_chan *axidma_chan,
         dma_template.dst_start = sg_dma_address(&sg_list[0]);
         dma_template.src_start = sg_dma_address(&sg_list[0]);
         dma_template.dir = dma_dir;
-        dma_template.numf = dma_tfr->vdma_tfr.height;
+        dma_template.numf = dma_tfr->frame.height;
         dma_template.frame_size = 1;
-        dma_template.sgl[0].size = dma_tfr->vdma_tfr.width *
-                dma_tfr->vdma_tfr.depth;
+        dma_template.sgl[0].size = dma_tfr->frame.width *
+                dma_tfr->frame.depth;
         dma_template.sgl[0].icg = 0;
         dma_txnd = dmaengine_prep_interleaved_dma(chan, &dma_template,
                 dma_flags);
@@ -505,10 +501,11 @@ int axidma_rw_transfer(struct axidma_device *dev,
     tx_tfr.notify_signal = dev->notify_signal,
     tx_tfr.process = get_current(),
     tx_tfr.cb_data = &dev->cb_data[trans->tx_channel_id];
-    // FIXME: FIXME: FIXME: Temporary
-    tx_tfr.vdma_tfr.height = 1080;
-    tx_tfr.vdma_tfr.width = 1920;
-    tx_tfr.vdma_tfr.depth = 4;
+
+    // Add in the frame information for VDMA transfers
+    if (tx_chan->type == AXIDMA_VDMA) {
+        memcpy(&tx_tfr.frame, &trans->tx_frame, sizeof(tx_tfr.frame));
+    }
 
     rx_tfr.sg_list = &rx_sg_list,
     rx_tfr.sg_len = 1,
@@ -519,9 +516,11 @@ int axidma_rw_transfer(struct axidma_device *dev,
     rx_tfr.notify_signal = dev->notify_signal,
     rx_tfr.process = get_current(),
     rx_tfr.cb_data = &dev->cb_data[trans->rx_channel_id];
-    rx_tfr.vdma_tfr.height = 1080;
-    rx_tfr.vdma_tfr.width = 1920;
-    rx_tfr.vdma_tfr.depth = 4;
+
+    // Add in the frame information for VDMA transfers
+    if (tx_chan->type == AXIDMA_VDMA) {
+        memcpy(&rx_tfr.frame, &trans->rx_frame, sizeof(rx_tfr.frame));
+    }
 
     // Prep both the receive and transmit transfers
     rc = axidma_prep_transfer(tx_chan, &tx_tfr);
@@ -564,9 +563,7 @@ int axidma_video_transfer(struct axidma_device *dev,
         .channel_id = trans->channel_id,
         .notify_signal = dev->notify_signal,
         .process = get_current(),
-        .vdma_tfr.width = trans->width,
-        .vdma_tfr.height = trans->height,
-        .vdma_tfr.depth = trans->depth,
+        .frame = trans->frame,
     };
 
     // Allocate an array to store the scatter list structures for the buffers
@@ -578,7 +575,7 @@ int axidma_video_transfer(struct axidma_device *dev,
     }
 
     // For each frame, setup a scatter-gather entry
-    image_size = trans->width * trans->height * trans->depth;
+    image_size = trans->frame.width * trans->frame.height * trans->frame.depth;
     for (i = 0; i < transfer.sg_len; i++)
     {
         rc = axidma_init_sg_entry(dev, transfer.sg_list, i,

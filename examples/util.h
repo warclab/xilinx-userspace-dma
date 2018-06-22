@@ -15,7 +15,8 @@
 // Command-line parsing utilities
 int parse_int(char option, char *arg_str, int *data);
 int parse_double(char option, char *arg_str, double *data);
-
+int parse_resolution(char option, char *arg_str, int *height, int *width,
+        int *depth);
 
 // File operation utilities
 int robust_read(int fd, char *buf, int buf_size);

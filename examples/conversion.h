@@ -18,11 +18,10 @@
 #define TVAL_TO_SEC(tval) \
     (((double)(tval).tv_sec) + (((double)(tval).tv_usec) / 1000000.0))
 
-// Converts a byte (integral) value to megabytes (floating-point)
-#define BYTE_TO_MB(size) (((double)(size)) / (1024.0 * 1024.0))
+// Converts a byte (integral) value to mebibytes (floating-point)
+#define BYTE_TO_MIB(size) (((double)(size)) / (1024.0 * 1024.0))
 
-// Converts a megabyte (floating-point) value to bytes (integral)
-#define MB_TO_BYTE(size) ((size_t)((size) * 1024.0 * 1024.0))
-
+// Converts a mebibyte (floating-point) value to bytes (integral)
+#define MIB_TO_BYTE(size) ((size_t)((size) * 1024.0 * 1024.0))
 
 #endif /* CONVERSION_H_ */

@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <assert.h>
+#include <string.h>             // Memset and memcpy functions
 #include <fcntl.h>              // Flags for open()
 #include <sys/stat.h>           // Open() system call
 #include <sys/types.h>          // Types for open()
@@ -142,7 +143,6 @@ static int categorize_channels(axidma_dev_t dev,
 
     return 0;
 }
-
 
 /* Probes the AXI DMA driver for all of the available channels. It places
  * returns an array of axidma_channel structures. */
@@ -437,7 +437,6 @@ void axidma_unregister_buffer(axidma_dev_t dev, void *user_addr)
     return;
 }
 
-
 /* This performs a one-way transfer over AXI DMA, the direction being specified
  * by the user. The user determines if this is blocking or not with `wait. */
 int axidma_oneway_transfer(axidma_dev_t dev, int channel, void *buf,
@@ -469,9 +468,11 @@ int axidma_oneway_transfer(axidma_dev_t dev, int channel, void *buf,
 }
 
 /* This performs a two-way transfer over AXI DMA, both sending data out and
- * receiving it back over DMA. The user determines if this call is  blocking. */
+ * receiving it back over DMA. The user determines if this call is blocking. */
 int axidma_twoway_transfer(axidma_dev_t dev, int tx_channel, void *tx_buf,
-        size_t tx_len, int rx_channel, void *rx_buf, size_t rx_len, bool wait)
+        size_t tx_len, struct axidma_video_frame *tx_frame, int rx_channel,
+        void *rx_buf, size_t rx_len, struct axidma_video_frame *rx_frame,
+        bool wait)
 {
     int rc;
     struct axidma_inout_transaction trans;
@@ -489,6 +490,18 @@ int axidma_twoway_transfer(axidma_dev_t dev, int tx_channel, void *tx_buf,
     trans.rx_channel_id = rx_channel;
     trans.rx_buf = rx_buf;
     trans.rx_buf_len = rx_len;
+
+    // Copy in the video frame if it is specified
+    if (tx_frame == NULL) {
+        memset(&trans.tx_frame, -1, sizeof(trans.tx_frame));
+    } else {
+        memcpy(&trans.tx_frame, tx_frame, sizeof(trans.tx_frame));
+    }
+    if (rx_frame == NULL) {
+        memset(&trans.rx_frame, -1, sizeof(trans.rx_frame));
+    } else {
+        memcpy(&trans.rx_frame, rx_frame, sizeof(trans.rx_frame));
+    }
 
     // Perform the read-write transfer
     rc = ioctl(dev->fd, AXIDMA_DMA_READWRITE, &trans);
@@ -519,9 +532,9 @@ int axidma_video_transfer(axidma_dev_t dev, int display_channel, size_t width,
     trans.channel_id = display_channel;
     trans.num_frame_buffers = num_buffers;
     trans.frame_buffers = frame_buffers;
-    trans.width = width;
-    trans.height = height;
-    trans.depth = depth;
+    trans.frame.width = width;
+    trans.frame.height = height;
+    trans.frame.depth = depth;
     axidma_cmd = (dma_chan->dir == AXIDMA_READ) ? AXIDMA_DMA_VIDEO_READ :
                                                   AXIDMA_DMA_VIDEO_WRITE;
     // Perform the video transfer
