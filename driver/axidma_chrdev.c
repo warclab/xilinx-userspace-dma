@@ -551,7 +551,6 @@ static const struct file_operations axidma_fops = {
 int axidma_chrdev_init(struct axidma_device *dev)
 {
     int rc;
-    u64 dma_mask;
 
     // Store a global pointer to the axidma device
     axidma_dev = dev;
@@ -587,12 +586,6 @@ int axidma_chrdev_init(struct axidma_device *dev)
     rc = cdev_add(&dev->chrdev, dev->dev_num, dev->num_devices);
     if (rc < 0) {
         axidma_err("Unable to add a character device.\n");
-        goto device_cleanup;
-    }
-
-    dma_mask = DMA_BIT_MASK(8 * sizeof(dma_addr_t));
-    if (dma_set_coherent_mask(dev->device, dma_mask)) {
-        axidma_err("Unable to set the DMA coherent mask.\n");
         goto device_cleanup;
     }
 
