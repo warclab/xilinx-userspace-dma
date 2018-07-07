@@ -673,7 +673,7 @@ int axidma_dma_init(struct platform_device *pdev, struct axidma_device *dev)
     u64 dma_mask;
 
     dma_mask = DMA_BIT_MASK(8 * sizeof(dma_addr_t));
-    rc = dma_set_coherent_mask(&pdev->dev, dma_mask);
+    rc = dma_set_coherent_mask(&dev->pdev->dev, dma_mask);
     if (rc < 0) {
         axidma_err("Unable to set the DMA coherent mask.\n");
         return rc;
