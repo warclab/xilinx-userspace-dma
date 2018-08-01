@@ -472,7 +472,7 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
             // Copy the frame buffer array from user space to kernel space
             user_video_trans = (struct axidma_video_transaction *__user)arg_ptr;
-            if (!copy_from_user(video_trans.frame_buffers,
+            if (copy_from_user(video_trans.frame_buffers,
                         user_video_trans->frame_buffers, size) != 0) {
                 axidma_err("Unable to copy the frame buffer array from "
                         "userspace for AXIDMA_VIDEO_READ.\n");
@@ -503,7 +503,7 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
             // Copy the frame buffer array from user space to kernel space
             user_video_trans = (struct axidma_video_transaction *__user)arg_ptr;
-            if (!copy_from_user(video_trans.frame_buffers,
+            if (copy_from_user(video_trans.frame_buffers,
                         user_video_trans->frame_buffers, size) != 0) {
                 axidma_err("Unable to copy the frame buffer array from "
                         "userspace for AXIDMA_VIDEO_READ.\n");
