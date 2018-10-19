@@ -15,7 +15,7 @@ obj-m += $(AXIDMA_MODULE_NAME).o
 # Set the CFLAGS for compiling the module, adding the include flags. Note that
 # the src variable points to the module's directory.
 INC_FLAGS = $(addprefix -I ,$(AXIDMA_INC_DIRS))
-ccflags-y = $(INC_FLAGS) -Werror
+ccflags-y = $(INC_FLAGS) -Werror -ggdb
 
 # If specified, define the macro to fixup the path for the Xilinx DMA include.
 # In some 4.x Xilinx kernels, the file is still in the old path from 3.x.
