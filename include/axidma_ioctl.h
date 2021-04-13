@@ -9,6 +9,8 @@
  * information about AXI DMA devices on the system.
  **/
 
+#ifdef LINUX_APP
+
 #ifndef AXIDMA_IOCTL_H_
 #define AXIDMA_IOCTL_H_
 
@@ -88,6 +90,11 @@ struct axidma_channel_info {
     struct axidma_chan *channels;   // Metadata about all available channels
 };
 
+struct axidma_signal_info {
+    int signal;
+    void *user_data;
+};
+
 struct axidma_register_buffer {
     int fd;                         // Anonymous file descriptor for DMA buffer
     size_t size;                    // The size of the external DMA buffer
@@ -125,6 +132,11 @@ struct axidma_video_transaction {
     struct axidma_video_frame frame;        // Information about the frame
 };
 
+struct axidma_residue {
+    int channel_id;             // The id of the DMA channel
+    unsigned int residue;       // The returned residue
+};
+
 /*----------------------------------------------------------------------------
  * IOCTL Interface
  *----------------------------------------------------------------------------*/
@@ -133,7 +145,7 @@ struct axidma_video_transaction {
 #define AXIDMA_IOCTL_MAGIC              'W'
 
 // The number of IOCTL's implemented, used for verification
-#define AXIDMA_NUM_IOCTLS               10
+#define AXIDMA_NUM_IOCTLS               11
 
 /**
  * Returns the number of available DMA channels in the system.
@@ -348,6 +360,16 @@ struct axidma_video_transaction {
                                              struct axidma_video_transaction)
 
 /**
+ * Get the residue of the last transaction
+ *
+ * Inputs:
+ *  - channel_id - The id for the channel you want to get the residue.
+ *  - residue - The returned residue.
+ **/
+#define AXIDMA_DMA_RESIDUE              _IOR(AXIDMA_IOCTL_MAGIC, 10, \
+                                             struct axidma_residue)
+
+/**
  * Stops all transactions on the given DMA channel.
  *
  * This function flushes all in-progress transactions, and discards all pending
@@ -378,3 +400,5 @@ struct axidma_video_transaction {
 #define AXIDMA_UNREGISTER_BUFFER        _IO(AXIDMA_IOCTL_MAGIC, 10)
 
 #endif /* AXIDMA_IOCTL_H_ */
+
+#endif

@@ -1,0 +1,42 @@
+From 6e92bab893d003dbbf4dd1c97fe6ff3d3de64436 Mon Sep 17 00:00:00 2001
+From: Demon000 <demonsingur@gmail.com>
+Date: Fri, 13 Dec 2019 17:26:46 +0200
+Subject: [PATCH 4/4] xlnx-axidma: do not expose dma_addr
+
+---
+ drivers/staging/xlnx_axidma/axidma_ioctl.h | 1 -
+ drivers/staging/xlnx_axidma/axidma_of.c    | 7 -------
+ 2 files changed, 8 deletions(-)
+
+diff --git a/drivers/staging/xlnx_axidma/axidma_ioctl.h b/drivers/staging/xlnx_axidma/axidma_ioctl.h
+index c6ceaf293703..8589d31aacd2 100644
+--- a/drivers/staging/xlnx_axidma/axidma_ioctl.h
++++ b/drivers/staging/xlnx_axidma/axidma_ioctl.h
+@@ -75,7 +75,6 @@ struct axidma_chan {
+     int channel_id;                 // The identifier for the device
+     const char *name;               // Name of the channel (ignore)
+     struct dma_chan *chan;          // The DMA channel (ignore)
+-    __u64 dma_addr;                 // The address of the DMA device
+ };
+ 
+ struct axidma_num_channels {
+diff --git a/drivers/staging/xlnx_axidma/axidma_of.c b/drivers/staging/xlnx_axidma/axidma_of.c
+index 82f82bc65c90..eab23d7dcc33 100644
+--- a/drivers/staging/xlnx_axidma/axidma_of.c
++++ b/drivers/staging/xlnx_axidma/axidma_of.c
+@@ -120,13 +120,6 @@ static int axidma_of_parse_channel(struct device_node *dma_node, int channel,
+     }
+     chan->channel_id = channel_id;
+ 
+-    rc = of_address_to_resource(dma_node, 0, &dma_res);
+-    if (rc) {
+-        axidma_err("Unable to read the memory resource for the dma node.\n");
+-        return -EINVAL;
+-    }
+-    chan->dma_addr = dma_res.start;
+-
+     // Use the compatible string to determine the channel's information
+     rc = axidma_parse_compatible_property(dma_chan_node, chan, dev);
+     if (rc < 0) {
+-- 
+2.17.1

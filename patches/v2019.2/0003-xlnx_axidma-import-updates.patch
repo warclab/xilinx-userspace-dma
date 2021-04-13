@@ -1,0 +1,441 @@
+From c5f37e4bba5145d59da1a8b6fb4f2e8f543f6f4b Mon Sep 17 00:00:00 2001
+From: Demon000 <demonsingur@gmail.com>
+Date: Fri, 13 Dec 2019 16:20:04 +0200
+Subject: [PATCH 3/3] xlnx_axidma: import updates
+
+---
+ drivers/staging/xlnx_axidma/axi_dma.c       | 27 +++++++++++++--
+ drivers/staging/xlnx_axidma/axidma.h        |  5 ++-
+ drivers/staging/xlnx_axidma/axidma_chrdev.c | 38 +++++++++++++++------
+ drivers/staging/xlnx_axidma/axidma_dma.c    | 35 ++++++++++++++++---
+ drivers/staging/xlnx_axidma/axidma_ioctl.h  | 22 +++++++++++-
+ drivers/staging/xlnx_axidma/axidma_of.c     |  8 +++++
+ 6 files changed, 116 insertions(+), 19 deletions(-)
+
+diff --git a/drivers/staging/xlnx_axidma/axi_dma.c b/drivers/staging/xlnx_axidma/axi_dma.c
+index 4bbb09a9dd84..3f22a7104ad4 100644
+--- a/drivers/staging/xlnx_axidma/axi_dma.c
++++ b/drivers/staging/xlnx_axidma/axi_dma.c
+@@ -52,17 +52,34 @@ static int axidma_probe(struct platform_device *pdev)
+     // Initialize the DMA interface
+     rc = axidma_dma_init(pdev, axidma_dev);
+     if (rc < 0) {
++        rc = -ENOSYS;
+         goto free_axidma_dev;
+     }
+ 
+     // Assign the character device name, minor number, and number of devices
+-    axidma_dev->chrdev_name = chrdev_name;
+     axidma_dev->minor_num = minor_num;
+     axidma_dev->num_devices = NUM_DEVICES;
+ 
++    if (axidma_dev->chrdev_index > 0) {
++        rc = strlen(chrdev_name) + 10;
++        axidma_dev->chrdev_name = kmalloc(rc * sizeof(char), GFP_KERNEL);
++
++        if (axidma_dev->chrdev_name == NULL) {
++            axidma_err("Unable to allocate the AXI DMA chardev name string.\n");
++            rc = -ENOMEM;
++            goto free_axidma_dev;
++        }
++
++        snprintf(axidma_dev->chrdev_name, rc, "%s%d", chrdev_name,
++                 axidma_dev->chrdev_index);
++    }
++    else
++         axidma_dev->chrdev_name = chrdev_name;
++
+     // Initialize the character device for the module.
+     rc = axidma_chrdev_init(axidma_dev);
+     if (rc < 0) {
++        rc = -ENOSYS;
+         goto destroy_dma_dev;
+     }
+ 
+@@ -72,9 +89,11 @@ static int axidma_probe(struct platform_device *pdev)
+ 
+ destroy_dma_dev:
+     axidma_dma_exit(axidma_dev);
++    if (axidma_dev->chrdev_index > 0)
++        kfree(axidma_dev->chrdev_name);
+ free_axidma_dev:
+     kfree(axidma_dev);
+-    return -ENOSYS;
++    return rc;
+ }
+ 
+ static int axidma_remove(struct platform_device *pdev)
+@@ -91,7 +110,11 @@ static int axidma_remove(struct platform_device *pdev)
+     axidma_dma_exit(axidma_dev);
+ 
+     // Free the device structure
++    if (axidma_dev->chrdev_index > 0)
++        kfree(axidma_dev->chrdev_name);
++
+     kfree(axidma_dev);
++
+     return 0;
+ }
+ 
+diff --git a/drivers/staging/xlnx_axidma/axidma.h b/drivers/staging/xlnx_axidma/axidma.h
+index d322a239f2fd..f339dfdb62cc 100644
+--- a/drivers/staging/xlnx_axidma/axidma.h
++++ b/drivers/staging/xlnx_axidma/axidma.h
+@@ -51,6 +51,7 @@ struct axidma_device {
+     unsigned int minor_num;         // The minor number of the device
+     dev_t dev_num;                  // The device number of the device
+     char *chrdev_name;              // The name of the character device
++    int chrdev_index;               // The optional character device index
+     struct device *device;          // Device structure for the char device
+     struct class *dev_class;        // The device class for the chardevice
+     struct cdev chrdev;             // The character device structure
+@@ -61,6 +62,7 @@ struct axidma_device {
+     int num_vdma_rx_chans;          // The number of receive  VDMA channels
+     int num_chans;                  // The total number of DMA channels
+     int notify_signal;              // Signal used to notify transfer completion
++    void *user_data;                // User data to be passed in the callback
+     struct platform_device *pdev;   // The platofrm device from the device tree
+     struct axidma_cb_data *cb_data; // The callback data for each channel
+     struct axidma_chan *channels;   // All available channels
+@@ -98,7 +100,7 @@ void axidma_get_num_channels(struct axidma_device *dev,
+                              struct axidma_num_channels *num_chans);
+ void axidma_get_channel_info(struct axidma_device *dev,
+                              struct axidma_channel_info *chan_info);
+-int axidma_set_signal(struct axidma_device *dev, int signal);
++int axidma_set_signal(struct axidma_device *dev, int signal, void *user_data);
+ int axidma_read_transfer(struct axidma_device *dev,
+                           struct axidma_transaction *trans);
+ int axidma_write_transfer(struct axidma_device *dev,
+@@ -108,6 +110,7 @@ int axidma_rw_transfer(struct axidma_device *dev,
+ int axidma_video_transfer(struct axidma_device *dev,
+                           struct axidma_video_transaction *trans,
+                           enum axidma_dir dir);
++int axidma_get_residue(struct axidma_device *dev, struct axidma_residue *res);
+ int axidma_stop_channel(struct axidma_device *dev, struct axidma_chan *chan);
+ dma_addr_t axidma_uservirt_to_dma(struct axidma_device *dev, void *user_addr,
+                                   size_t size);
+diff --git a/drivers/staging/xlnx_axidma/axidma_chrdev.c b/drivers/staging/xlnx_axidma/axidma_chrdev.c
+index f99639ea5a8b..f6863c6c8873 100644
+--- a/drivers/staging/xlnx_axidma/axidma_chrdev.c
++++ b/drivers/staging/xlnx_axidma/axidma_chrdev.c
+@@ -34,9 +34,6 @@
+  * Internal Definitions
+  *----------------------------------------------------------------------------*/
+ 
+-// TODO: Maybe this can be improved?
+-static struct axidma_device *axidma_dev;
+-
+ // A structure that represents a DMA buffer allocation
+ struct axidma_dma_allocation {
+     size_t size;                // Size of the buffer
+@@ -44,6 +41,7 @@ struct axidma_dma_allocation {
+     void *kern_addr;            // Kernel virtual address of the buffer
+     dma_addr_t dma_addr;        // DMA bus address of the buffer
+     struct list_head list;      // List node pointers for allocation list
++    struct device *device;      // Device structure for the char device
+ };
+ 
+ /* A structure that represents a DMA buffer allocation imported from another
+@@ -205,13 +203,11 @@ static int axidma_put_external(struct axidma_device *dev, void *user_addr)
+ 
+ static void axidma_vma_close(struct vm_area_struct *vma)
+ {
+-    struct axidma_device *dev;
+     struct axidma_dma_allocation *dma_alloc;
+ 
+     // Get the AXI DMA allocation data and free the DMA buffer
+-    dev = axidma_dev;
+     dma_alloc = vma->vm_private_data;
+-    dma_free_coherent(&dev->pdev->dev, dma_alloc->size, dma_alloc->kern_addr,
++    dma_free_coherent(dma_alloc->device, dma_alloc->size, dma_alloc->kern_addr,
+                       dma_alloc->dma_addr);
+ 
+     // Remove the allocation from the list, and free the structure
+@@ -242,7 +238,8 @@ static int axidma_open(struct inode *inode, struct file *file)
+     }
+ 
+     // Place the axidma structure in the private data of the file
+-    file->private_data = (void *)axidma_dev;
++    file->private_data = container_of(inode->i_cdev, struct axidma_device,
++                                      chrdev);
+     return 0;
+ }
+ 
+@@ -272,6 +269,7 @@ static int axidma_mmap(struct file *file, struct vm_area_struct *vma)
+     // Set the user virtual address and the size
+     dma_alloc->size = vma->vm_end - vma->vm_start;
+     dma_alloc->user_addr = (void *)vma->vm_start;
++    dma_alloc->device = &dev->pdev->dev;
+ 
+     // Configure the DMA device
+     of_dma_configure(&dev->pdev->dev, NULL, true);
+@@ -347,10 +345,12 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+     struct axidma_device *dev;
+     struct axidma_num_channels num_chans;
+     struct axidma_channel_info usr_chans, kern_chans;
++    struct axidma_signal_info sig_info;
+     struct axidma_register_buffer ext_buf;
+     struct axidma_transaction trans;
+     struct axidma_inout_transaction inout_trans;
+     struct axidma_video_transaction video_trans, *__user user_video_trans;
++    struct axidma_residue residue;
+     struct axidma_chan chan_info;
+ 
+     // Coerce the arguement as a userspace pointer
+@@ -412,7 +412,12 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+             break;
+ 
+         case AXIDMA_SET_DMA_SIGNAL:
+-            rc = axidma_set_signal(dev, arg);
++            if (copy_from_user(&sig_info, arg_ptr, sizeof(sig_info)) != 0) {
++                axidma_err("Unable to copy signal info from userspace for "
++                           "AXIDMA_SET_DMA_SIGNAL.\n");
++                return -EFAULT;
++            }
++            rc = axidma_set_signal(dev, sig_info.signal, sig_info.user_data);
+             break;
+ 
+         case AXIDMA_REGISTER_BUFFER:
+@@ -514,6 +519,20 @@ static long axidma_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+             kfree(video_trans.frame_buffers);
+             break;
+ 
++        case AXIDMA_DMA_RESIDUE:
++            if (copy_from_user(&residue, arg_ptr, sizeof(residue)) != 0) {
++                axidma_err("Unable to copy residue info from userspace for "
++                           "AXIDMA_DMA_RESIDUE.\n");
++                return -EFAULT;
++            }
++            rc = axidma_get_residue(dev, &residue);
++            if (copy_to_user(arg_ptr, &residue, sizeof(residue)) != 0) {
++                axidma_err("Unable to copy residue info to userspace for "
++                           "AXIDMA_DMA_RESIDUE.\n");
++                return -EFAULT;
++            }
++            break;
++
+         case AXIDMA_STOP_DMA_CHANNEL:
+             if (copy_from_user(&chan_info, arg_ptr, sizeof(chan_info)) != 0) {
+                 axidma_err("Unable to channel info from userspace for "
+@@ -551,9 +570,6 @@ int axidma_chrdev_init(struct axidma_device *dev)
+ {
+     int rc;
+ 
+-    // Store a global pointer to the axidma device
+-    axidma_dev = dev;
+-
+     // Allocate a major and minor number region for the character device
+     rc = alloc_chrdev_region(&dev->dev_num, dev->minor_num, dev->num_devices,
+                              dev->chrdev_name);
+diff --git a/drivers/staging/xlnx_axidma/axidma_dma.c b/drivers/staging/xlnx_axidma/axidma_dma.c
+index 4b54de0200ad..37162f4e287c 100644
+--- a/drivers/staging/xlnx_axidma/axidma_dma.c
++++ b/drivers/staging/xlnx_axidma/axidma_dma.c
+@@ -58,6 +58,7 @@ struct axidma_transfer {
+     enum axidma_type type;          // The type of the transfer (VDMA/DMA)
+     int channel_id;                 // The ID of the channel
+     int notify_signal;              // The signal to use for async transfers
++    void *user_data;                // User data to be passed in the callback
+     struct task_struct *process;    // The process requesting the transfer
+     struct axidma_cb_data *cb_data; // The callback data struct
+ 
+@@ -71,6 +72,7 @@ struct axidma_transfer {
+ struct axidma_cb_data {
+     int channel_id;                 // The id of the channel used
+     int notify_signal;              // For async, signal to send
++    void *user_data;                // User data to be passed in the callback
+     struct task_struct *process;    // The process to send the signal to
+     struct completion *comp;        // For sync, the notification to kernel
+ };
+@@ -154,7 +156,8 @@ static void axidma_dma_callback(void *data)
+         memset(&sig_info, 0, sizeof(sig_info));
+         sig_info.si_signo = cb_data->notify_signal;
+         sig_info.si_code = SI_QUEUE;
+-        sig_info.si_int = cb_data->channel_id;
++        sig_info.si_errno = cb_data->channel_id;    //This shouldn't be here
++        sig_info.si_ptr = cb_data->user_data;
+         send_sig_info(cb_data->notify_signal, &sig_info, cb_data->process);
+     }
+ }
+@@ -241,6 +244,7 @@ static int axidma_prep_transfer(struct axidma_chan *axidma_chan,
+     /* If we're going to wait for this channel, initialize the completion for
+      * the channel, and setup the callback to complete it. */
+     cb_data->channel_id = dma_tfr->channel_id;
++    cb_data->user_data = dma_tfr->user_data;
+     if (dma_tfr->wait) {
+         cb_data->comp = dma_comp;
+         cb_data->notify_signal = -1;
+@@ -338,7 +342,7 @@ void axidma_get_channel_info(struct axidma_device *dev,
+     return;
+ }
+ 
+-int axidma_set_signal(struct axidma_device *dev, int signal)
++int axidma_set_signal(struct axidma_device *dev, int signal, void *user_data)
+ {
+     // Verify the signal is a real-time one
+     if (!VALID_NOTIFY_SIGNAL(signal)) {
+@@ -349,6 +353,7 @@ int axidma_set_signal(struct axidma_device *dev, int signal)
+     }
+ 
+     dev->notify_signal = signal;
++    dev->user_data = user_data;
+     return 0;
+ }
+ 
+@@ -384,6 +389,7 @@ int axidma_read_transfer(struct axidma_device *dev,
+     rx_tfr.wait = trans->wait;
+     rx_tfr.channel_id = trans->channel_id;
+     rx_tfr.notify_signal = dev->notify_signal;
++    rx_tfr.user_data = dev->user_data;
+     rx_tfr.process = get_current();
+     rx_tfr.cb_data = &dev->cb_data[trans->channel_id];
+ 
+@@ -434,6 +440,7 @@ int axidma_write_transfer(struct axidma_device *dev,
+     tx_tfr.wait = trans->wait;
+     tx_tfr.channel_id = trans->channel_id;
+     tx_tfr.notify_signal = dev->notify_signal;
++    tx_tfr.user_data = dev->user_data;
+     tx_tfr.process = get_current();
+     tx_tfr.cb_data = &dev->cb_data[trans->channel_id];
+ 
+@@ -499,6 +506,7 @@ int axidma_rw_transfer(struct axidma_device *dev,
+     tx_tfr.wait = false,
+     tx_tfr.channel_id = trans->tx_channel_id,
+     tx_tfr.notify_signal = dev->notify_signal,
++    tx_tfr.user_data = dev->user_data;
+     tx_tfr.process = get_current(),
+     tx_tfr.cb_data = &dev->cb_data[trans->tx_channel_id];
+ 
+@@ -514,6 +522,7 @@ int axidma_rw_transfer(struct axidma_device *dev,
+     rx_tfr.wait = trans->wait,
+     rx_tfr.channel_id = trans->rx_channel_id,
+     rx_tfr.notify_signal = dev->notify_signal,
++    rx_tfr.user_data = dev->user_data;
+     rx_tfr.process = get_current(),
+     rx_tfr.cb_data = &dev->cb_data[trans->rx_channel_id];
+ 
+@@ -562,6 +571,7 @@ int axidma_video_transfer(struct axidma_device *dev,
+         .wait = false,
+         .channel_id = trans->channel_id,
+         .notify_signal = dev->notify_signal,
++        .user_data = dev->user_data,
+         .process = get_current(),
+         .frame = trans->frame,
+     };
+@@ -587,7 +597,7 @@ int axidma_video_transfer(struct axidma_device *dev,
+ 
+     // Get the channel with the given id
+     chan = axidma_get_chan(dev, trans->channel_id);
+-    if (chan == NULL && chan->dir != dir &&
++    if (chan == NULL || chan->dir != dir ||
+             chan->type != AXIDMA_VDMA) {
+         axidma_err("Invalid device id %d for VDMA %s channel.\n",
+                    trans->channel_id, axidma_dir_to_string(chan->dir));
+@@ -611,6 +621,23 @@ int axidma_video_transfer(struct axidma_device *dev,
+     return 0;
+ }
+ 
++int axidma_get_residue(struct axidma_device *dev, struct axidma_residue *res)
++{
++    struct axidma_chan *chan;
++    struct dma_tx_state state;
++
++    chan = axidma_get_chan(dev, res->channel_id);
++
++    if (chan != NULL) {
++        dmaengine_tx_status(chan->chan, chan->chan->cookie, &state);
++        res->residue = state.residue;
++
++        return 0;
++    }
++    else
++        return -ENODEV;
++}
++
+ int axidma_stop_channel(struct axidma_device *dev,
+                         struct axidma_chan *chan_info)
+ {
+@@ -618,7 +645,7 @@ int axidma_stop_channel(struct axidma_device *dev,
+ 
+     // Get the transmit and receive channels with the given ids.
+     chan = axidma_get_chan(dev, chan_info->channel_id);
+-    if (chan == NULL && chan->type != chan_info->type &&
++    if (chan == NULL || chan->type != chan_info->type ||
+             chan->dir != chan_info->dir) {
+         axidma_err("Invalid channel id %d for %s %s channel.\n",
+             chan_info->channel_id, axidma_type_to_string(chan_info->type),
+diff --git a/drivers/staging/xlnx_axidma/axidma_ioctl.h b/drivers/staging/xlnx_axidma/axidma_ioctl.h
+index 9b2309e9e5e6..c6ceaf293703 100644
+--- a/drivers/staging/xlnx_axidma/axidma_ioctl.h
++++ b/drivers/staging/xlnx_axidma/axidma_ioctl.h
+@@ -90,6 +90,11 @@ struct axidma_channel_info {
+     struct axidma_chan *channels;   // Metadata about all available channels
+ };
+ 
++struct axidma_signal_info {
++    int signal;
++    void *user_data;
++};
++
+ struct axidma_register_buffer {
+     int fd;                         // Anonymous file descriptor for DMA buffer
+     size_t size;                    // The size of the external DMA buffer
+@@ -127,6 +132,11 @@ struct axidma_video_transaction {
+     struct axidma_video_frame frame;        // Information about the frame
+ };
+ 
++struct axidma_residue {
++    int channel_id;             // The id of the DMA channel
++    unsigned int residue;       // The returned residue
++};
++
+ /*----------------------------------------------------------------------------
+  * IOCTL Interface
+  *----------------------------------------------------------------------------*/
+@@ -135,7 +145,7 @@ struct axidma_video_transaction {
+ #define AXIDMA_IOCTL_MAGIC              'W'
+ 
+ // The number of IOCTL's implemented, used for verification
+-#define AXIDMA_NUM_IOCTLS               10
++#define AXIDMA_NUM_IOCTLS               11
+ 
+ /**
+  * Returns the number of available DMA channels in the system.
+@@ -349,6 +359,16 @@ struct axidma_video_transaction {
+ #define AXIDMA_DMA_VIDEO_WRITE          _IOR(AXIDMA_IOCTL_MAGIC, 8, \
+                                              struct axidma_video_transaction)
+ 
++/**
++ * Get the residue of the last transaction
++ *
++ * Inputs:
++ *  - channel_id - The id for the channel you want to get the residue.
++ *  - residue - The returned residue.
++ **/
++#define AXIDMA_DMA_RESIDUE              _IOR(AXIDMA_IOCTL_MAGIC, 10, \
++                                             struct axidma_residue)
++
+ /**
+  * Stops all transactions on the given DMA channel.
+  *
+diff --git a/drivers/staging/xlnx_axidma/axidma_of.c b/drivers/staging/xlnx_axidma/axidma_of.c
+index ef177cb02774..82f82bc65c90 100644
+--- a/drivers/staging/xlnx_axidma/axidma_of.c
++++ b/drivers/staging/xlnx_axidma/axidma_of.c
+@@ -227,6 +227,14 @@ int axidma_of_parse_dma_nodes(struct platform_device *pdev,
+     dev->num_vdma_tx_chans = 0;
+     dev->num_vdma_rx_chans = 0;
+ 
++    rc = of_property_read_u32(driver_node, "index", &dev->chrdev_index);
++
++    if (rc < 0) {
++        if (rc != -EINVAL)
++            axidma_node_err(driver_node, "Invalid index property, ignoring.\n");
++        dev->chrdev_index = -1;
++    }
++
+     /* For each DMA channel specified in the deivce tree, parse out the
+      * information about the channel, namely its direction and type. */
+     for (i = 0; i < dev->num_chans; i++)
+-- 
+2.17.1
